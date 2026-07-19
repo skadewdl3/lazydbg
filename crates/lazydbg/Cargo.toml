@@ -1,0 +1,8 @@
+[package]
+name = "lazydbg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reactatui-macros = { path = "../reactatui-macros" }
+reactatui = { path = "../reactatui" }
