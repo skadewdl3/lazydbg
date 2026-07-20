@@ -427,20 +427,57 @@ pub fn use_state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
     })
 }
 
-/// Persistent state shared by *name* instead of tree position, so
-/// unrelated components can read/write the same slot without prop
-/// drilling. Safe to call from anywhere, including outside a
-/// `#[component]` (e.g. your main loop).
-pub fn use_state_keyed<T: 'static>(key: &'static str, init: impl FnOnce() -> T) -> State<T> {
+/// Access global state that you expect to already exist (initialized by
+/// some other `use_global_with`/`use_global_or_default` call earlier in
+/// the frame, or in a previous frame). Panics if it hasn't been created yet.
+///
+/// Use this when you're a "consumer" component that doesn't own the
+/// state's lifecycle — e.g. reading a theme that's set up once at the root.
+pub fn use_global<T: 'static>(key: &'static str) -> State<T> {
+    RUNTIME.with(|rt| {
+        assert!(
+            rt.borrow().keyed_states.contains_key(key),
+            "use_global::<{}>(\"{}\") read before it was initialized — \
+             call use_global_with/use_global_or_default somewhere first",
+            std::any::type_name::<T>(),
+            key
+        );
+    });
+    State {
+        key: StateKey::Keyed(key),
+        _marker: std::marker::PhantomData,
+    }
+}
+
+/// Access global state, constructing it with `init` on first access.
+/// Accepts closures (`|| MyStruct { .. }`) and fn items (`MyStruct::new`)
+/// equally well since both satisfy `FnOnce() -> T`.
+pub fn use_global_with<T: 'static>(key: &'static str, init: impl FnOnce() -> T) -> State<T> {
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
         rt.keyed_states
             .entry(key)
             .or_insert_with(|| Rc::new(RefCell::new(Box::new(init()) as Box<dyn Any>)));
-        State {
-            key: StateKey::Keyed(key),
-            _marker: std::marker::PhantomData,
-        }
+    });
+    State {
+        key: StateKey::Keyed(key),
+        _marker: std::marker::PhantomData,
+    }
+}
+
+/// Access global state, falling back to `T::default()` on first access.
+/// Sugar for `use_global_with(key, T::default)`.
+pub fn use_global_or_default<T: 'static + Default>(key: &'static str) -> State<T> {
+    use_global_with(key, T::default)
+}
+
+/// Non-panicking existence check, for the rare case where you need to
+/// branch on whether the state has been created yet at all.
+pub fn try_use_global<T: 'static>(key: &'static str) -> Option<State<T>> {
+    let exists = RUNTIME.with(|rt| rt.borrow().keyed_states.contains_key(key));
+    exists.then_some(State {
+        key: StateKey::Keyed(key),
+        _marker: std::marker::PhantomData,
     })
 }
 

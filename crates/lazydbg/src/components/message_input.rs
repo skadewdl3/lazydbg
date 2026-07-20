@@ -6,7 +6,7 @@ use reactatui::prelude::*;
 /// and `"quit"` when the user presses Esc.
 #[component]
 pub fn MessageInput<'a>(is_active: bool) -> TuiNode<'a> {
-    let state = use_state_keyed("msg_input", InputState::default);
+    let state = use_global::<InputState>("msg_input");
 
     if is_active {
         let keys = use_key();

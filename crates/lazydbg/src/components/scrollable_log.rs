@@ -6,8 +6,8 @@ use reactatui::prelude::*;
 #[component]
 pub fn ScrollableLog<'a>(is_active: bool) -> TuiNode<'a> {
     // scroll offset: (y, x)
-    let scroll_offset = use_state_keyed("scroll_offset", || (0_u16, 0_u16));
-    let log = use_state_keyed("log", Vec::<String>::new);
+    let scroll_offset: State<(u16, u16)> = use_global_or_default("scroll_offset");
+    let log: State<Vec<String>> = use_global_or_default("log");
 
     let scroll_x = move |delta: i16| {
         scroll_offset.with_mut(|o| apply_scroll_delta(&mut o.1, delta));

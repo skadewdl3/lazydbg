@@ -1,17 +1,35 @@
-use std::{io, time::Duration};
-
+use clap::Parser;
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
 };
 use reactatui::prelude::*;
+use std::{io, time::Duration};
+use ui::Home;
 
 mod components;
+mod interface;
 mod ui;
 
-use ui::DemoUi;
+#[derive(Parser, Debug, Default, Copy, Clone)]
+struct Args {
+    #[arg(short, long)]
+    gdb: bool,
+    #[arg(short, long)]
+    lldb: bool,
+}
 
 fn main() -> io::Result<()> {
+    let args = Args::parse();
+    if args.gdb && args.lldb {
+        println!("Please select either gdb or lldb backend, not both.");
+        return Ok(());
+    }
+
+    // Transfer args to global state
+    use_global_with("cli-args", move || args);
+
+    // Start the ratatui app
     let mut terminal = ratatui::try_init()?;
     // Enable mouse events
     execute!(std::io::stderr(), EnableMouseCapture)?;
@@ -26,7 +44,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
         reactatui::hooks::begin_frame();
 
         terminal.draw(|frame| {
-            frame.render_node(DemoUi("lazydbg"), frame.area());
+            frame.render_node(Home(), frame.area());
         })?;
 
         if event::poll(Duration::from_millis(16))? {
@@ -48,7 +66,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
             }
         }
 
-        if use_state_keyed("should_quit", || false).get() {
+        if use_global_or_default("should_quit").get() {
             break;
         }
     }

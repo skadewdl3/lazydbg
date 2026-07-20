@@ -7,7 +7,7 @@ use crate::ui::Panel;
 /// Responds to global Esc key to trigger application quit.
 #[component]
 pub fn DemoUi<'a>(name: &'a str) -> TuiNode<'a> {
-    let should_quit = use_state_keyed("should_quit", || false);
+    let should_quit: State<bool> = use_global_or_default("should_quit");
 
     let keys = use_key();
     keys.on(KeyCode::Esc, move || should_quit.set(true));

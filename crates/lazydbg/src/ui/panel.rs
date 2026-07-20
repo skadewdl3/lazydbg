@@ -11,8 +11,8 @@ use crate::components::{ActionButton, MessageInput, ScrollableLog};
 /// 2: Event Log
 #[component]
 pub fn Panel<'a>() -> TuiNode<'a> {
-    let log = use_state_keyed("log", Vec::<String>::new);
-    let active_pane = use_state_keyed("active_pane", || 0_usize); // 0: Input, 1: Buttons, 2: Log
+    let log = use_global_with("log", Vec::<String>::new);
+    let active_pane = use_global_with("active_pane", || 0_usize); // 0: Input, 1: Buttons, 2: Log
     let keys = use_key();
 
     let next_pane = move || active_pane.with_mut(|p| *p = (*p + 1) % 3);

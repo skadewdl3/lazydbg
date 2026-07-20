@@ -21,8 +21,8 @@ pub use widgets::{Input, InputState};
 
 pub mod prelude {
     pub use crate::hooks::{
-        Emitter, KeyHandle, Propagation, State, use_emit, use_key, use_on, use_state,
-        use_state_keyed,
+        Emitter, KeyHandle, Propagation, State, try_use_global, use_emit, use_global,
+        use_global_or_default, use_global_with, use_key, use_on, use_state,
     };
     pub use crate::{
         FlexNode, FrameExt, Input, InputState, Padding, StateHandle, TuiNode, component, ratatui,
