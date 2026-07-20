@@ -4,42 +4,28 @@ use reactatui::prelude::*;
 /// A scrollable paragraph widget displaying a log of events.
 /// Handles arrow keys for manual panning and mouse wheel events for scrolling.
 #[component]
-pub fn scrollable_log<'a>(is_active: bool) -> TuiNode<'a> {
+pub fn ScrollableLog<'a>(is_active: bool) -> TuiNode<'a> {
     // scroll offset: (y, x)
-    let scroll_offset = use_state_keyed("scroll_offset", || (0_usize, 0_usize));
+    let scroll_offset = use_state_keyed("scroll_offset", || (0_u16, 0_u16));
     let log = use_state_keyed("log", Vec::<String>::new);
+
+    let scroll_x = move |delta: i16| {
+        scroll_offset.with_mut(|o| apply_scroll_delta(&mut o.1, delta));
+    };
+
+    let scroll_y = move |delta: i16| {
+        scroll_offset.with_mut(|o| apply_scroll_delta(&mut o.0, delta));
+    };
 
     if is_active {
         let keys = use_key();
-        {
-            let offset = scroll_offset.clone();
-            keys.on(KeyCode::Down, move || {
-                offset.with_mut(|o| o.0 = o.0.saturating_add(1))
-            });
-        }
-        {
-            let offset = scroll_offset.clone();
-            keys.on(KeyCode::Up, move || {
-                offset.with_mut(|o| o.0 = o.0.saturating_sub(1))
-            });
-        }
-        {
-            let offset = scroll_offset.clone();
-            keys.on(KeyCode::Right, move || {
-                offset.with_mut(|o| o.1 = o.1.saturating_add(1))
-            });
-        }
-        {
-            let offset = scroll_offset.clone();
-            keys.on(KeyCode::Left, move || {
-                offset.with_mut(|o| o.1 = o.1.saturating_sub(1))
-            });
-        }
+        keys.on(KeyCode::Down, move || scroll_y(1));
+        keys.on(KeyCode::Up, move || scroll_y(-1));
+        keys.on(KeyCode::Right, move || scroll_x(1));
+        keys.on(KeyCode::Left, move || scroll_x(-1));
     }
 
-    let offset_val = scroll_offset.get();
-    let scroll_y = offset_val.0 as u16;
-    let scroll_x = offset_val.1 as u16;
+    let (scroll_y_offset, scroll_x_offset) = scroll_offset.get();
 
     // Provide lots of dummy lines to test scrolling
     let mut all_lines = vec![
@@ -50,36 +36,25 @@ pub fn scrollable_log<'a>(is_active: bool) -> TuiNode<'a> {
         "-----------------------------------------".to_string(),
     ];
     let user_lines = log.with(|v| v.clone());
+    all_lines.extend(user_lines);
     for i in 0..50 {
         all_lines.push(format!("Dummy line {} with a reaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaally long trailing text so we can test horizontal scrolling properly without wrapping", i + 1));
     }
-    all_lines.extend(user_lines);
 
     let lines_str = all_lines.join("\n");
 
-    let offset_y_mut = scroll_offset.clone();
-    let offset_x_mut = scroll_offset.clone();
-
     tui! {
-        <Paragraph text={lines_str} scroll={(scroll_y, scroll_x)}
-            on:scrolly={move |delta: i16| {
-                offset_y_mut.with_mut(|o| {
-                    if delta > 0 {
-                        o.0 = o.0.saturating_add(delta as usize);
-                    } else {
-                        o.0 = o.0.saturating_sub((-delta) as usize);
-                    }
-                });
-            }}
-            on:scrollx={move |delta: i16| {
-                offset_x_mut.with_mut(|o| {
-                    if delta > 0 {
-                        o.1 = o.1.saturating_add(delta as usize);
-                    } else {
-                        o.1 = o.1.saturating_sub((-delta) as usize);
-                    }
-                });
-            }}
+        <Paragraph text={lines_str} scroll={(scroll_y_offset, scroll_x_offset)}
+            on:scrolly={move |delta: i16| scroll_y(delta)}
+            on:scrollx={move |delta: i16| scroll_x(delta)}
         />
+    }
+}
+
+fn apply_scroll_delta(offset: &mut u16, delta: i16) {
+    if delta >= 0 {
+        *offset = offset.saturating_add(delta as u16);
+    } else {
+        *offset = offset.saturating_sub(delta.unsigned_abs());
     }
 }

@@ -20,6 +20,8 @@ pub struct Element {
 pub struct Tag {
     pub path: Vec<Ident>,
     pub constructor: Option<Ident>,
+    /// Optional positional arguments passed via `(arg1, arg2)` syntax after the tag/constructor name.
+    pub constructor_args: Option<TokenStream2>,
 }
 
 #[derive(Clone)]
@@ -27,7 +29,6 @@ pub enum Prop {
     Named { name: Ident, value: TokenStream2 },
     Boolean(Ident),
     Spread(TokenStream2),
-    /// `on:click={handler}` / `on:mousein={handler}` / `on:mouseout={handler}` / `on:scrollx={handler}` / `on:scrolly={handler}`
     Event { kind: String, handler: TokenStream2 },
 }
 

@@ -9,7 +9,7 @@ use reactatui::prelude::*;
 mod components;
 mod ui;
 
-use ui::demo_ui;
+use ui::DemoUi;
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::try_init()?;
@@ -26,7 +26,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
         reactatui::hooks::begin_frame();
 
         terminal.draw(|frame| {
-            frame.render_node(demo_ui("lazydbg"), frame.area());
+            frame.render_node(DemoUi("lazydbg"), frame.area());
         })?;
 
         if event::poll(Duration::from_millis(16))? {

@@ -1,5 +1,5 @@
-use ratatui::layout::Rect;
 use crate::node::TuiNode;
+use ratatui::layout::Rect;
 
 pub trait FrameExt {
     fn render_node(&mut self, node: TuiNode<'_>, area: Rect);

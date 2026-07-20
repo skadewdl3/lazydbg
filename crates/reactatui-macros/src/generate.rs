@@ -64,10 +64,6 @@ fn gen_element(element: &Element) -> TokenStream2 {
     match element.tag.simple_name().as_deref() {
         Some("Component") => gen_component_is(element),
         Some("Flex") => gen_flex(element),
-        Some("FlexItem") => {
-            let item = gen_flex_item(element);
-            quote! { ::reactatui::TuiNode::from(::reactatui::FlexNode::new(vec![#item])) }
-        }
         _ if is_builtin(&element.tag.type_name()) => gen_builtin(element),
         _ => gen_custom_component(element),
     }
@@ -83,9 +79,6 @@ fn gen_component_is(element: &Element) -> TokenStream2 {
 
 fn gen_flex(element: &Element) -> TokenStream2 {
     let items = element.children.iter().map(|child| match child {
-        Node::Element(element) if element.tag.simple_name().as_deref() == Some("FlexItem") => {
-            gen_flex_item(element)
-        }
         Node::Element(element) => {
             let node = gen_element_without_flex(element);
             let mut item = quote! { ::reactatui::FlexItemNode::new(#node) };
@@ -140,20 +133,6 @@ fn gen_element_without_flex(element: &Element) -> TokenStream2 {
     gen_element(&clone)
 }
 
-fn gen_flex_item(element: &Element) -> TokenStream2 {
-    let child = gen_branch(&element.children);
-    let mut item = quote! { ::reactatui::FlexItemNode::new(#child) };
-    for prop in &element.props {
-        match prop {
-            Prop::Named { name, value } if name == "flex" => item = quote! { #item.flex(#value) },
-            Prop::Named { name, value } if name == "min" => item = quote! { #item.min(#value) },
-            Prop::Named { name, value } if name == "max" => item = quote! { #item.max(#value) },
-            _ => {}
-        }
-    }
-    item
-}
-
 fn gen_builtin(element: &Element) -> TokenStream2 {
     if element.tag.type_name() == "List" && !element.children.is_empty() {
         return gen_list_with_children(element);
@@ -197,12 +176,19 @@ fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {
         _ => None,
     });
 
-    if click.is_none() && mousein.is_none() && mouseout.is_none() && scrollx.is_none() && scrolly.is_none() {
+    if click.is_none()
+        && mousein.is_none()
+        && mouseout.is_none()
+        && scrollx.is_none()
+        && scrolly.is_none()
+    {
         return node;
     }
 
     let click_tokens = match &click {
-        Some(h) => quote! { Some(Box::new(#h) as Box<dyn FnMut(::reactatui::ratatui::crossterm::event::MouseButton)>) },
+        Some(h) => {
+            quote! { Some(Box::new(#h) as Box<dyn FnMut(::reactatui::ratatui::crossterm::event::MouseButton)>) }
+        }
         None => quote! { None },
     };
     let mousein_tokens = match &mousein {
@@ -256,16 +242,35 @@ fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
         .as_ref()
         .map(ToString::to_string)
         .unwrap_or_else(|| default_constructor(&ty_name).to_string());
-    let positional = positional_props(&ty_name, &constructor);
-    let args = positional
-        .iter()
-        .filter_map(|name| named_prop(&element.props, name));
 
     let ctor_ident = format_ident!("{constructor}");
-    let mut widget = if constructor == "default" {
-        quote! { #ty::default() }
+
+    let mut widget = if let Some(ctor_args) = &element.tag.constructor_args {
+        // Explicit positional args provided via `(arg1, arg2)` syntax.
+        if constructor == "default" {
+            quote! { #ty::default() }
+        } else {
+            quote! { #ty::#ctor_ident(#ctor_args) }
+        }
     } else {
-        quote! { #ty::#ctor_ident(#(#args),*) }
+        // Legacy behaviour: look up known positional prop names and pull them from named props.
+        let positional = positional_props(&ty_name, &constructor);
+        let args = positional
+            .iter()
+            .filter_map(|name| named_prop(&element.props, name));
+        if constructor == "default" {
+            quote! { #ty::default() }
+        } else {
+            quote! { #ty::#ctor_ident(#(#args),*) }
+        }
+    };
+
+    // Collect the set of positional prop names to skip them below (only relevant when
+    // NOT using explicit constructor_args, but harmless to compute either way).
+    let positional = if element.tag.constructor_args.is_none() {
+        positional_props(&ty_name, &constructor)
+    } else {
+        Vec::new()
     };
 
     for prop in &element.props {
@@ -339,13 +344,51 @@ fn gen_list_items(children: &[Node]) -> TokenStream2 {
 
 fn gen_custom_component(element: &Element) -> TokenStream2 {
     let tag = element.tag.type_path_tokens();
-    let args = element.props.iter().filter_map(|prop| match prop {
-        Prop::Named { value, .. } => Some(quote! { #value }),
-        Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
-    });
+    let component_name = element.tag.type_name();
 
-    let call = quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#(#args),*)) };
-    maybe_wrap_with_mouse(call, &element.props)
+    // Collect `on:event_name={handler}` props — these become `use_on` calls
+    // scoped to the child component about to be invoked, so sibling
+    // component handlers don't all receive the same bubbled event.
+    let event_hooks: Vec<TokenStream2> = element
+        .props
+        .iter()
+        .filter_map(|prop| match prop {
+            Prop::Event { kind, handler }
+                // Mouse/pointer events are handled separately via register_mouse_region.
+                if !matches!(kind.as_str(), "click" | "mousein" | "mouseout" | "scrollx" | "scrolly") =>
+            {
+                let event_name = kind.as_str();
+                Some(quote! {
+                    ::reactatui::hooks::use_on_component_id(__reactatui_child_id, #event_name, #handler);
+                })
+            }
+            _ => None,
+        })
+        .collect();
+
+    let call = if let Some(ctor_args) = &element.tag.constructor_args {
+        // Positional args supplied explicitly via `Tag(arg1, arg2)` syntax.
+        quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#ctor_args)) }
+    } else {
+        // Legacy: collect all named-prop values as positional arguments.
+        let args = element.props.iter().filter_map(|prop| match prop {
+            Prop::Named { value, .. } => Some(quote! { #value }),
+            Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
+        });
+        quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#(#args),*)) }
+    };
+
+    let wrapped = maybe_wrap_with_mouse(call, &element.props);
+
+    if event_hooks.is_empty() {
+        wrapped
+    } else {
+        quote! {{
+            let __reactatui_child_id = ::reactatui::hooks::__next_component_id(#component_name);
+            #(#event_hooks)*
+            #wrapped
+        }}
+    }
 }
 
 fn is_builtin(name: &str) -> bool {

@@ -1,18 +1,20 @@
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::layout::Rect;
 
 type AnyCell = Rc<RefCell<Box<dyn Any>>>;
 
 struct KeyBinding {
     matches: Box<dyn Fn(&KeyEvent) -> bool>,
-    handler: Box<dyn FnMut(KeyEvent)>,
+    handler: Option<Box<dyn FnMut(KeyEvent)>>,
 }
 
 /// Controls whether a custom-event handler allows the event to continue
@@ -31,7 +33,7 @@ struct EventListener {
     /// Position of `component_id` inside the emitter's ancestry path
     /// (filled in at dispatch time for ordering).
     event_name: &'static str,
-    handler: Box<dyn FnMut(&dyn Any) -> Propagation>,
+    handler: Option<Box<dyn FnMut(&dyn Any) -> Propagation>>,
 }
 
 /// A registered interactive screen region. Populated every render frame
@@ -59,8 +61,10 @@ struct HookRuntime {
     event_listeners: Vec<EventListener>,
     /// Per-frame mouse regions — rebuilt every render.
     mouse_regions: Vec<MouseRegion>,
-    /// Which region ids were hovered last frame (for hover-enter detection).
+    /// Which region ids were hovered last frame (for hover-enter tracking).
     prev_hovered: HashSet<u64>,
+    /// Maps a component ID to its ancestry path (the id_stack at the time of entry).
+    component_paths: HashMap<u64, Rc<Vec<u64>>>,
 }
 
 thread_local! {
@@ -232,17 +236,42 @@ fn contains(rect: Rect, col: u16, row: u16) -> bool {
 /// Run every handler registered this frame whose binding matches.
 /// Returns `true` if at least one handler fired.
 pub fn dispatch_key(event: KeyEvent) -> bool {
-    RUNTIME.with(|rt| {
-        let mut rt = rt.borrow_mut();
-        let mut handled = false;
-        for binding in rt.key_bindings.iter_mut() {
-            if (binding.matches)(&event) {
-                (binding.handler)(event);
-                handled = true;
+    let indices: Vec<usize> = RUNTIME.with(|rt| {
+        rt.borrow()
+            .key_bindings
+            .iter()
+            .enumerate()
+            .filter_map(|(i, binding)| {
+                if binding.handler.is_some() && (binding.matches)(&event) {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    });
+
+    let handled = !indices.is_empty();
+    for i in indices {
+        let Some(mut handler) = RUNTIME.with(|rt| {
+            rt.borrow_mut()
+                .key_bindings
+                .get_mut(i)
+                .and_then(|binding| binding.handler.take())
+        }) else {
+            continue;
+        };
+
+        handler(event);
+
+        RUNTIME.with(|rt| {
+            if let Some(binding) = rt.borrow_mut().key_bindings.get_mut(i) {
+                binding.handler = Some(handler);
             }
-        }
-        handled
-    })
+        });
+    }
+
+    handled
 }
 
 #[doc(hidden)]
@@ -277,57 +306,89 @@ pub fn __enter_component(name: &'static str) -> ComponentGuard {
             None => 0,
         };
 
-        let mut hasher = DefaultHasher::new();
-        parent.hash(&mut hasher);
-        name.hash(&mut hasher);
-        sibling_index.hash(&mut hasher);
-        let id = hasher.finish();
+        let id = component_id(parent, name, sibling_index);
 
         rt.id_stack.push(id);
         rt.sibling_counters.push(0);
         rt.hook_indices.push(0);
+
+        if !rt.component_paths.contains_key(&id) {
+            let path_clone = Rc::new(rt.id_stack.clone());
+            rt.component_paths.insert(id, path_clone);
+        }
     });
     ComponentGuard
+}
+
+#[doc(hidden)]
+pub fn __next_component_id(name: &'static str) -> u64 {
+    RUNTIME.with(|rt| {
+        let rt = rt.borrow();
+        let parent = *rt.id_stack.last().unwrap_or(&0);
+        let sibling_index = *rt.sibling_counters.last().unwrap_or(&0);
+        component_id(parent, name, sibling_index)
+    })
+}
+
+fn component_id(parent: u64, name: &'static str, sibling_index: u32) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    parent.hash(&mut hasher);
+    name.hash(&mut hasher);
+    sibling_index.hash(&mut hasher);
+    hasher.finish()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum StateKey {
+    Positional(u64, u32),
+    Keyed(&'static str),
 }
 
 /// A handle to a persistent value. Cheap to clone (it's a shared
 /// pointer into the hook store), so it's fine to move copies into
 /// `use_key` closures.
 pub struct State<T> {
-    cell: AnyCell,
+    key: StateKey,
     _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> Clone for State<T> {
     fn clone(&self) -> Self {
-        Self {
-            cell: self.cell.clone(),
-            _marker: std::marker::PhantomData,
-        }
+        *self
     }
 }
+impl<T> Copy for State<T> {}
 
 impl<T: 'static> State<T> {
+    fn get_cell(&self) -> AnyCell {
+        RUNTIME.with(|rt| {
+            let rt = rt.borrow();
+            match self.key {
+                StateKey::Positional(comp, idx) => rt
+                    .states
+                    .get(&(comp, idx))
+                    .expect("state not found")
+                    .clone(),
+                StateKey::Keyed(k) => rt.keyed_states.get(k).expect("state not found").clone(),
+            }
+        })
+    }
+
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        let borrow = self.cell.borrow();
+        let cell = self.get_cell();
+        let borrow = cell.borrow();
         f(borrow.downcast_ref::<T>().expect("use_state type mismatch"))
     }
 
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
-        let mut borrow = self.cell.borrow_mut();
+        let cell = self.get_cell();
+        let mut borrow = cell.borrow_mut();
         f(borrow.downcast_mut::<T>().expect("use_state type mismatch"))
     }
 
     pub fn set(&self, value: T) {
-        *self.cell.borrow_mut() = Box::new(value);
-    }
-
-    /// Borrow the value mutably for as long as you need — handy for
-    /// handing `&mut T` to a `StatefulWidget`.
-    pub fn borrow_mut(&self) -> std::cell::RefMut<'_, T> {
-        std::cell::RefMut::map(self.cell.borrow_mut(), |any| {
-            any.downcast_mut::<T>().expect("use_state type mismatch")
-        })
+        let cell = self.get_cell();
+        *cell.borrow_mut() = Box::new(value);
     }
 }
 
@@ -356,13 +417,11 @@ pub fn use_state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
             *counter += 1;
             value
         };
-        let cell = rt
-            .states
+        rt.states
             .entry((component_id, index))
-            .or_insert_with(|| Rc::new(RefCell::new(Box::new(init()) as Box<dyn Any>)))
-            .clone();
+            .or_insert_with(|| Rc::new(RefCell::new(Box::new(init()) as Box<dyn Any>)));
         State {
-            cell,
+            key: StateKey::Positional(component_id, index),
             _marker: std::marker::PhantomData,
         }
     })
@@ -375,13 +434,11 @@ pub fn use_state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
 pub fn use_state_keyed<T: 'static>(key: &'static str, init: impl FnOnce() -> T) -> State<T> {
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
-        let cell = rt
-            .keyed_states
+        rt.keyed_states
             .entry(key)
-            .or_insert_with(|| Rc::new(RefCell::new(Box::new(init()) as Box<dyn Any>)))
-            .clone();
+            .or_insert_with(|| Rc::new(RefCell::new(Box::new(init()) as Box<dyn Any>)));
         State {
-            cell,
+            key: StateKey::Keyed(key),
             _marker: std::marker::PhantomData,
         }
     })
@@ -390,6 +447,7 @@ pub fn use_state_keyed<T: 'static>(key: &'static str, init: impl FnOnce() -> T) 
 /// A handle the current component can use to register key bindings
 /// for this frame. Registration happens every render (mirroring how
 /// the whole node tree is rebuilt every render).
+#[derive(Clone, Copy)]
 pub struct KeyHandle;
 
 impl KeyHandle {
@@ -427,7 +485,7 @@ impl KeyHandle {
         RUNTIME.with(|rt| {
             rt.borrow_mut().key_bindings.push(KeyBinding {
                 matches: Box::new(matches),
-                handler: Box::new(handler),
+                handler: Some(Box::new(handler)),
             });
         });
     }
@@ -455,26 +513,25 @@ pub fn use_key() -> KeyHandle {
 /// component, in **bubbling order** (closest ancestor first → root last).
 pub struct Emitter<T: 'static> {
     event_name: &'static str,
-    /// Snapshot of `id_stack` taken during the render that created this
-    /// emitter — the full ancestry path of the emitting component.
-    ancestry_path: Rc<Vec<u64>>,
+    component_id: u64,
     _marker: std::marker::PhantomData<fn(T)>,
 }
 
 impl<T> Clone for Emitter<T> {
     fn clone(&self) -> Self {
-        Self {
-            event_name: self.event_name,
-            ancestry_path: self.ancestry_path.clone(),
-            _marker: std::marker::PhantomData,
-        }
+        *self
     }
 }
+impl<T> Copy for Emitter<T> {}
 
 impl<T: 'static> Emitter<T> {
     /// Emit the event, bubbling up through ancestor listeners.
     pub fn emit(&self, data: T) {
         let data_any: Box<dyn Any> = Box::new(data);
+
+        let ancestry_path = RUNTIME
+            .with(|rt| rt.borrow().component_paths.get(&self.component_id).cloned())
+            .expect("ancestry path not found");
 
         // Collect matching listener indices ordered by bubbling:
         // highest position in ancestry_path = closest ancestor = fires first.
@@ -489,7 +546,7 @@ impl<T: 'static> Emitter<T> {
                         return None;
                     }
                     // rposition: last occurrence gives the deepest (closest) match.
-                    self.ancestry_path
+                    ancestry_path
                         .iter()
                         .rposition(|&id| id == listener.component_id)
                         .map(|depth| (i, depth))
@@ -501,10 +558,72 @@ impl<T: 'static> Emitter<T> {
         });
 
         for i in indices {
-            let propagation = RUNTIME.with(|rt| {
-                let mut rt = rt.borrow_mut();
-                (rt.event_listeners[i].handler)(data_any.as_ref())
+            let Some(mut handler) = RUNTIME.with(|rt| {
+                rt.borrow_mut()
+                    .event_listeners
+                    .get_mut(i)
+                    .and_then(|listener| listener.handler.take())
+            }) else {
+                continue;
+            };
+
+            let propagation = handler(data_any.as_ref());
+
+            RUNTIME.with(|rt| {
+                if let Some(listener) = rt.borrow_mut().event_listeners.get_mut(i) {
+                    listener.handler = Some(handler);
+                }
             });
+
+            if propagation == Propagation::Stop {
+                break;
+            }
+        }
+    }
+
+    /// Emit the event **globally** — every registered [`use_on`] listener for
+    /// this event name is called, regardless of whether it is an ancestor of
+    /// the emitting component. Listeners fire in registration order.
+    ///
+    /// Use sparingly; prefer [`emit`](Self::emit) for normal parent-child
+    /// communication and reserve `emit_global` for app-wide broadcasts
+    /// (e.g. theme changes, global notifications).
+    pub fn emit_global(&self, data: T) {
+        let data_any: Box<dyn Any> = Box::new(data);
+
+        let indices: Vec<usize> = RUNTIME.with(|rt| {
+            rt.borrow()
+                .event_listeners
+                .iter()
+                .enumerate()
+                .filter_map(|(i, listener)| {
+                    if listener.event_name == self.event_name {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        });
+
+        for i in indices {
+            let Some(mut handler) = RUNTIME.with(|rt| {
+                rt.borrow_mut()
+                    .event_listeners
+                    .get_mut(i)
+                    .and_then(|listener| listener.handler.take())
+            }) else {
+                continue;
+            };
+
+            let propagation = handler(data_any.as_ref());
+
+            RUNTIME.with(|rt| {
+                if let Some(listener) = rt.borrow_mut().event_listeners.get_mut(i) {
+                    listener.handler = Some(handler);
+                }
+            });
+
             if propagation == Propagation::Stop {
                 break;
             }
@@ -529,16 +648,15 @@ impl<T: 'static> Emitter<T> {
 /// }
 /// ```
 pub fn use_emit<T: 'static>(event_name: &'static str) -> Emitter<T> {
-    let path = RUNTIME.with(|rt| {
+    let component_id = RUNTIME.with(|rt| {
         let rt = rt.borrow();
-        rt.id_stack
+        *rt.id_stack
             .last()
-            .expect("use_emit() called outside of a #[component] function");
-        Rc::new(rt.id_stack.clone())
+            .expect("use_emit() called outside of a #[component] function")
     });
     Emitter {
         event_name,
-        ancestry_path: path,
+        component_id,
         _marker: std::marker::PhantomData,
     }
 }
@@ -570,7 +688,7 @@ pub fn use_emit<T: 'static>(event_name: &'static str) -> Emitter<T> {
 /// ```
 pub fn use_on<T: 'static>(
     event_name: &'static str,
-    mut handler: impl FnMut(&T) -> Propagation + 'static,
+    handler: impl FnMut(&T) -> Propagation + 'static,
 ) {
     RUNTIME.with(|rt| {
         let component_id = *rt
@@ -578,16 +696,27 @@ pub fn use_on<T: 'static>(
             .id_stack
             .last()
             .expect("use_on() called outside of a #[component] function");
+        use_on_component_id(component_id, event_name, handler);
+    });
+}
+
+#[doc(hidden)]
+pub fn use_on_component_id<T: 'static>(
+    component_id: u64,
+    event_name: &'static str,
+    mut handler: impl FnMut(&T) -> Propagation + 'static,
+) {
+    RUNTIME.with(|rt| {
         rt.borrow_mut().event_listeners.push(EventListener {
             component_id,
             event_name,
-            handler: Box::new(move |data: &dyn Any| {
+            handler: Some(Box::new(move |data: &dyn Any| {
                 if let Some(typed) = data.downcast_ref::<T>() {
                     handler(typed)
                 } else {
                     Propagation::Continue
                 }
-            }),
+            })),
         });
     });
 }

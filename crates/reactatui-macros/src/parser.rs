@@ -106,6 +106,7 @@ impl Parser {
     fn parse_tag(&mut self) -> syn::Result<Tag> {
         let mut path = vec![self.expect_ident()?];
         let mut constructor = None;
+        let mut constructor_args = None;
 
         while self.consume_colon2() {
             let ident = self.expect_ident()?;
@@ -116,7 +117,19 @@ impl Parser {
             path.push(ident);
         }
 
-        Ok(Tag { path, constructor })
+        // Parse optional positional args: `(arg1, arg2)` immediately after the tag/constructor name.
+        if let Some(TokenTree::Group(group)) = self.peek().cloned() {
+            if group.delimiter() == Delimiter::Parenthesis {
+                self.pos += 1;
+                constructor_args = Some(group.stream());
+            }
+        }
+
+        Ok(Tag {
+            path,
+            constructor,
+            constructor_args,
+        })
     }
 
     fn parse_prop(&mut self) -> syn::Result<Prop> {
@@ -136,7 +149,8 @@ impl Parser {
                     let kind_ident = self.expect_ident()?;
                     let kind = kind_ident.to_string();
                     if !self.consume_punct('=') {
-                        return Err(self.error(format!("on:{kind} requires a value: on:{kind}={{handler}}")))
+                        return Err(self
+                            .error(format!("on:{kind} requires a value: on:{kind}={{handler}}")));
                     }
                     let Some(TokenTree::Group(group)) = self.peek().cloned() else {
                         return Err(self.error("event handler must be wrapped in braces"));
@@ -145,7 +159,10 @@ impl Parser {
                         return Err(self.error("event handler must be wrapped in braces"));
                     }
                     self.pos += 1;
-                    return Ok(Prop::Event { kind, handler: group.stream() });
+                    return Ok(Prop::Event {
+                        kind,
+                        handler: group.stream(),
+                    });
                 }
             }
         }
@@ -282,6 +299,7 @@ impl Parser {
     fn is_tag_boundary(&self) -> bool {
         matches!(self.peek(), Some(TokenTree::Punct(punct)) if matches!(punct.as_char(), '/' | '>'))
             || matches!(self.peek(), Some(TokenTree::Ident(_)))
+            || matches!(self.peek(), Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis)
     }
 
     fn path_can_be_constructor(&self, path: &[Ident]) -> bool {

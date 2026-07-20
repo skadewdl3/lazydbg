@@ -1,6 +1,6 @@
 //! Proc-macros for the reactatui crate.
 //!
-//! Provides the `tui!` macro for declaring TUI node trees and the `#[component]` 
+//! Provides the `tui!` macro for declaring TUI node trees and the `#[component]`
 //! attribute macro for functional components.
 
 mod ast;
@@ -35,7 +35,7 @@ pub fn tui(input: TokenStream) -> TokenStream {
 
 /// A functional component that tracks hooks automatically.
 ///
-/// It injects a guard at the top of the function to push the component's unique 
+/// It injects a guard at the top of the function to push the component's unique
 /// context to the hook runtime stack.
 #[proc_macro_attribute]
 pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
@@ -51,6 +51,11 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
         let _guard = ::reactatui::hooks::__enter_component(#fn_name);
     };
     func.block.stmts.insert(0, guard_stmt);
+
+    // Automatically allow non-snake case naming for React-like component names.
+    func.attrs.push(syn::parse_quote! {
+        #[allow(non_snake_case)]
+    });
 
     quote!(#func).into()
 }

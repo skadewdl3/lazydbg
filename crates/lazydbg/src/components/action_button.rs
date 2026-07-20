@@ -1,11 +1,12 @@
 use reactatui::prelude::*;
 
 /// A clickable and hoverable action button widget.
-/// Emits `event_name` with its label as a payload when clicked.
+/// Emits `"clicked"` with its label as a payload when clicked.
 #[component]
-pub fn action_button<'a>(label: &'a str, event_name: &'static str) -> TuiNode<'a> {
+pub fn ActionButton<'a>(label: &'a str) -> TuiNode<'a> {
     let hovered = use_state(|| false);
-    let emit = use_emit::<String>(event_name);
+    let emit = use_emit::<String>("clicked");
+    let click_label = label.to_string();
 
     let style = if hovered.get() {
         Style::default().fg(Color::Black).bg(Color::Cyan)
@@ -13,17 +14,16 @@ pub fn action_button<'a>(label: &'a str, event_name: &'static str) -> TuiNode<'a
         Style::default().fg(Color::Cyan)
     };
 
-    let label_owned = label.to_string();
     let hovered_in = hovered.clone();
     let hovered_out = hovered.clone();
 
     tui! {
         <Block::default
-            title={label}
+            title={label.to_string()}
             borders={Borders::ALL}
             style={style}
             on:click={move |_btn| {
-                emit.emit(label_owned.clone());
+                emit.emit(click_label.clone());
             }}
             on:mousein={move || {
                 hovered_in.set(true);
