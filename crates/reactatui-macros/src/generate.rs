@@ -1,4 +1,4 @@
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 
 use crate::ast::{Element, ElseBranch, ForNode, IfNode, Node, Prop};
@@ -64,7 +64,6 @@ fn gen_element(element: &Element) -> TokenStream2 {
     match element.tag.simple_name().as_deref() {
         Some("Component") => gen_component_is(element),
         Some("Flex") => gen_flex(element),
-        _ if is_builtin(&element.tag.type_name()) => gen_builtin(element),
         _ => gen_custom_component(element),
     }
 }
@@ -131,25 +130,6 @@ fn gen_element_without_flex(element: &Element) -> TokenStream2 {
         Prop::Spread(_) | Prop::Event { .. } => true,
     });
     gen_element(&clone)
-}
-
-fn gen_builtin(element: &Element) -> TokenStream2 {
-    if element.tag.type_name() == "List" && !element.children.is_empty() {
-        return gen_list_with_children(element);
-    }
-
-    let widget = gen_widget_expr(element, false);
-    if element.children.is_empty() {
-        return gen_widget_node(widget, element);
-    }
-
-    if element.tag.type_name() == "Block" {
-        let child = gen_branch(&element.children);
-        // Apply mouse-region wrapper around the whole block+child composite if needed.
-        maybe_wrap_with_mouse(quote! { #child.block(#widget) }, &element.props)
-    } else {
-        gen_widget_node(widget, element)
-    }
 }
 
 /// Wrap a `TuiNode`-producing expression with mouse-region registration if
@@ -224,15 +204,6 @@ fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {
     }}
 }
 
-fn gen_widget_node(widget: TokenStream2, element: &Element) -> TokenStream2 {
-    let node = if let Some(state) = named_prop(&element.props, "state") {
-        quote! { ::reactatui::TuiNode::from_stateful_widget(#widget, #state) }
-    } else {
-        quote! { ::reactatui::TuiNode::from_widget(#widget) }
-    };
-    maybe_wrap_with_mouse(node, &element.props)
-}
-
 fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
     let ty = element.tag.type_path_tokens();
     let ty_name = element.tag.type_name();
@@ -265,8 +236,7 @@ fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
         }
     };
 
-    // Collect the set of positional prop names to skip them below (only relevant when
-    // NOT using explicit constructor_args, but harmless to compute either way).
+    // Collect the set of positional prop names to skip them below.
     let positional = if element.tag.constructor_args.is_none() {
         positional_props(&ty_name, &constructor)
     } else {
@@ -275,16 +245,13 @@ fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
 
     for prop in &element.props {
         match prop {
-            Prop::Named { name, value } if name == "state" => {}
+            Prop::Named { name, .. } if name == "state" => {}
             Prop::Named { name, .. } if positional.iter().any(|pos| name == pos) => {}
             Prop::Named { name, .. }
                 if omit_flex_props
                     && matches!(name.to_string().as_str(), "flex" | "min" | "max") => {}
             Prop::Named { name, value } => {
                 widget = quote! { #widget.#name(#value) };
-            }
-            Prop::Boolean(name) if ty_name == "Block" && name == "borders" => {
-                widget = quote! { #widget.borders(::reactatui::ratatui::widgets::Borders::ALL) };
             }
             Prop::Boolean(name) => {
                 widget = quote! { #widget.#name(true) };
@@ -298,48 +265,6 @@ fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
     }
 
     widget
-}
-
-fn gen_list_with_children(element: &Element) -> TokenStream2 {
-    let child_items = gen_list_items(&element.children);
-    let mut clone = element.clone();
-    clone.children.clear();
-    clone
-        .props
-        .retain(|prop| !matches!(prop, Prop::Named { name, .. } if name == "items"));
-    clone.props.push(Prop::Named {
-        name: Ident::new("items", proc_macro2::Span::call_site()),
-        value: quote! { #child_items },
-    });
-    let widget = gen_widget_expr(&clone, false);
-    gen_widget_node(widget, &clone)
-}
-
-fn gen_list_items(children: &[Node]) -> TokenStream2 {
-    let pushes = children.iter().map(|child| match child {
-        Node::Element(element) if element.tag.type_name() == "ListItem" => {
-            let item = gen_widget_expr(element, false);
-            quote! { __reactatui_items.push(#item); }
-        }
-        Node::For(node) => {
-            let head = &node.head;
-            let inner = gen_list_items(&node.body);
-            quote! {
-                for #head {
-                    __reactatui_items.extend(#inner);
-                }
-            }
-        }
-        _ => quote! {
-            compile_error!("List children must be <ListItem /> elements or for loops producing ListItem elements");
-        },
-    });
-
-    quote! {{
-        let mut __reactatui_items = Vec::new();
-        #(#pushes)*
-        __reactatui_items
-    }}
 }
 
 fn gen_custom_component(element: &Element) -> TokenStream2 {
@@ -366,11 +291,46 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
         })
         .collect();
 
-    let call = if let Some(ctor_args) = &element.tag.constructor_args {
-        // Positional args supplied explicitly via `Tag(arg1, arg2)` syntax.
+    let has_children = !element.children.is_empty();
+
+    let call = if has_children && (is_known_widget(&component_name) || element.tag.constructor.is_some()) {
+        let widget = gen_widget_expr(element, false);
+        let child_nodes = element.children.iter().map(gen_node);
+        let children_vec = quote! { vec![#(#child_nodes),*] };
+        let widget = quote! { #widget.children(#children_vec) };
+        if let Some(state) = named_prop(&element.props, "state") {
+            quote! { ::reactatui::TuiNode::from_stateful_widget(#widget, #state) }
+        } else {
+            quote! { ::reactatui::TuiNode::from_widget(#widget) }
+        }
+    } else if has_children {
+        let child_nodes = element.children.iter().map(gen_node);
+        let children_vec = quote! { vec![#(#child_nodes),*] };
+
+        if let Some(ctor_args) = &element.tag.constructor_args {
+            quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#ctor_args, #children_vec)) }
+        } else {
+            let named_args: Vec<_> = element.props.iter().filter_map(|prop| match prop {
+                Prop::Named { name, value } if name != "children" => Some(quote! { #value }),
+                Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
+                _ => None,
+            }).collect();
+            if named_args.is_empty() {
+                quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#children_vec)) }
+            } else {
+                quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#(#named_args),*, #children_vec)) }
+            }
+        }
+    } else if is_known_widget(&component_name) || element.tag.constructor.is_some() {
+        let widget = gen_widget_expr(element, false);
+        if let Some(state) = named_prop(&element.props, "state") {
+            quote! { ::reactatui::TuiNode::from_stateful_widget(#widget, #state) }
+        } else {
+            quote! { ::reactatui::TuiNode::from_widget(#widget) }
+        }
+    } else if let Some(ctor_args) = &element.tag.constructor_args {
         quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#ctor_args)) }
     } else {
-        // Legacy: collect all named-prop values as positional arguments.
         let args = element.props.iter().filter_map(|prop| match prop {
             Prop::Named { value, .. } => Some(quote! { #value }),
             Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
@@ -391,18 +351,10 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
     }
 }
 
-fn is_builtin(name: &str) -> bool {
+fn is_known_widget(name: &str) -> bool {
     matches!(
         name,
-        "Block"
-            | "Paragraph"
-            | "List"
-            | "ListItem"
-            | "Tabs"
-            | "Table"
-            | "Gauge"
-            | "Clear"
-            | "Input"
+        "Block" | "Paragraph" | "Input" | "Tabs" | "Table" | "Gauge" | "Clear"
     )
 }
 
@@ -417,7 +369,6 @@ fn positional_props(type_name: &str, constructor: &str) -> Vec<&'static str> {
     match (type_name, constructor) {
         ("Paragraph", "new") => vec!["text"],
         ("Paragraph", "styled") => vec!["text", "style"],
-        ("List", "new") => vec!["items"],
         ("ListItem", "new") => vec!["text"],
         ("Input", "new") => vec!["placeholder"],
         ("Tabs", "new") => vec!["titles"],

@@ -1,10 +1,9 @@
-use ratatui::crossterm::event::KeyCode;
-use reactatui::prelude::*;
-
 use crate::{
     Args,
     interface::{DbgBackend, DbgSession, GdbBackend, LldbBackend},
 };
+use ratatui::widgets::{Block, Borders, Paragraph};
+use reactatui::{prelude::*, ratatui::crossterm::event::KeyCode};
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Panels {
@@ -48,9 +47,9 @@ pub fn Home<'a>() -> TuiNode<'a> {
 
     tui! {
         <Flex direction={Direction::Vertical} gap={1}>
-            <Block::default title_bottom={keybinds} borders={Borders::ALL} flex={0}>
-                <Paragraph text={"Layout demo — Tab/Shift+Tab to focus, Up/Down to scroll, Esc quits"} />
-            </Block>
+            <Paragraph::new("Layout demo — Tab/Shift+Tab to focus, Up/Down to scroll, Esc quits")
+                block={Block::default().title_bottom(keybinds).borders(Borders::ALL)}
+            />
         </Flex>
     }
 }

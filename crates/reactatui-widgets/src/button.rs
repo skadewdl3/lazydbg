@@ -1,11 +1,12 @@
+use ratatui::widgets::{Block, Borders};
 use reactatui::prelude::*;
 
 /// A clickable and hoverable action button widget.
 /// Emits `"clicked"` with its label as a payload when clicked.
 #[component]
-pub fn ActionButton<'a>(label: &'a str) -> TuiNode<'a> {
+pub fn Button<'a>(label: &'a str) -> TuiNode<'a> {
     let hovered = use_state(|| false);
-    let emit = use_emit::<String>("clicked");
+    let emit = use_emit::<String>("click");
     let click_label = label.to_string();
 
     let style = if hovered.get() {

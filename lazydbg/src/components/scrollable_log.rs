@@ -1,5 +1,6 @@
 use ratatui::crossterm::event::KeyCode;
 use reactatui::prelude::*;
+use reactatui_widgets::*;
 
 /// A scrollable paragraph widget displaying a log of events.
 /// Handles arrow keys for manual panning and mouse wheel events for scrolling.

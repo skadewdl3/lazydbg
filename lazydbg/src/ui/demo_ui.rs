@@ -1,7 +1,6 @@
 use ratatui::crossterm::event::KeyCode;
 use reactatui::prelude::*;
-
-use crate::ui::Panel;
+use reactatui_widgets::*;
 
 /// The root UI component containing a title bar and the main multi-pane panel.
 /// Responds to global Esc key to trigger application quit.
@@ -17,7 +16,6 @@ pub fn DemoUi<'a>(name: &'a str) -> TuiNode<'a> {
             <Block::default title={name} borders={Borders::ALL} flex={0}>
                 <Paragraph text={"Layout demo — Tab/Shift+Tab to focus, Up/Down to scroll, Esc quits"} />
             </Block>
-            <Panel flex={10} />
         </Flex>
     }
 }

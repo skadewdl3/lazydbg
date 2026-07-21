@@ -47,6 +47,19 @@ impl Parser {
 
         if let Some(TokenTree::Group(group)) = self.peek().cloned() {
             if group.delimiter() == Delimiter::Brace {
+                let mut inner = Parser::new(group.stream());
+                if inner.peek_ident("for") {
+                    self.pos += 1;
+                    return inner.parse_for().map(Node::For);
+                }
+                if inner.peek_ident("if") {
+                    self.pos += 1;
+                    return inner.parse_if().map(Node::If);
+                }
+                if inner.starts_element() {
+                    self.pos += 1;
+                    return inner.parse_element_or_fragment();
+                }
                 self.pos += 1;
                 return Ok(Node::Expr(group.stream()));
             }

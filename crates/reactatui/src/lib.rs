@@ -8,16 +8,14 @@ pub mod flex;
 pub mod hooks;
 pub mod layout;
 pub mod node;
-pub mod widgets;
 
 pub use ratatui;
-pub use reactatui_macros::{component, tui};
+pub use reactatui_macros::{children, component, tui};
 
 pub use ext::FrameExt;
 pub use flex::{FlexItemNode, FlexNode};
 pub use layout::Padding;
 pub use node::{StateHandle, TuiNode};
-pub use widgets::{Input, InputState};
 
 pub mod prelude {
     pub use crate::hooks::{
@@ -25,12 +23,10 @@ pub mod prelude {
         use_global_or_default, use_global_with, use_key, use_on, use_state,
     };
     pub use crate::{
-        FlexNode, FrameExt, Input, InputState, Padding, StateHandle, TuiNode, component, ratatui,
-        tui,
+        FlexNode, FrameExt, Padding, StateHandle, TuiNode, children, component, ratatui, tui,
     };
     pub use ratatui::{
         layout::{Alignment, Constraint, Direction, Layout, Rect},
         style::{Color, Modifier, Style},
-        widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Row, Table, Tabs},
     };
 }

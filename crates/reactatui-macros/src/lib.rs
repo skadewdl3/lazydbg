@@ -41,6 +41,13 @@ pub fn tui(input: TokenStream) -> TokenStream {
 pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     let mut func = parse_macro_input!(input as ItemFn);
 
+    // Strip `#[children]` attributes from function parameters
+    for input_arg in &mut func.sig.inputs {
+        if let syn::FnArg::Typed(pat_type) = input_arg {
+            pat_type.attrs.retain(|attr| !attr.path().is_ident("children"));
+        }
+    }
+
     // Build the name as a string literal for the runtime id hash.
     let fn_name = func.sig.ident.to_string();
 
@@ -58,4 +65,10 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     });
 
     quote!(#func).into()
+}
+
+/// An attribute marker on component arguments to accept child nodes.
+#[proc_macro_attribute]
+pub fn children(_metadata: TokenStream, input: TokenStream) -> TokenStream {
+    input
 }

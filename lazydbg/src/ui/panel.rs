@@ -1,5 +1,6 @@
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use reactatui::prelude::*;
+use reactatui_widgets::*;
 
 use crate::components::{ActionButton, MessageInput, ScrollableLog};
 
