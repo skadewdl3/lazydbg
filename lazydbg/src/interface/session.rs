@@ -1,5 +1,3 @@
-use std::process::Child;
-
 use crate::interface::{DbgBackend, backend::DbgBackendStatus};
 
 pub struct DbgSession {

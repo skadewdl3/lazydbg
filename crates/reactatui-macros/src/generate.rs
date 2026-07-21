@@ -167,7 +167,7 @@ fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {
 
     let click_tokens = match &click {
         Some(h) => {
-            quote! { Some(Box::new(#h) as Box<dyn FnMut(::reactatui::ratatui::crossterm::event::MouseButton)>) }
+            quote! { Some(Box::new(#h) as Box<dyn FnMut(ratatui::crossterm::event::MouseButton)>) }
         }
         None => quote! { None },
     };
@@ -190,7 +190,7 @@ fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {
 
     quote! {{
         let __inner_node = #node;
-        ::reactatui::TuiNode::Widget(Box::new(move |__area: ::reactatui::ratatui::layout::Rect, __buf: &mut ::reactatui::ratatui::buffer::Buffer| {
+        ::reactatui::TuiNode::Widget(Box::new(move |__area: ::ratatui::layout::Rect, __buf: &mut ::ratatui::buffer::Buffer| {
             ::reactatui::hooks::register_mouse_region(
                 __area,
                 #click_tokens,
@@ -199,7 +199,7 @@ fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {
                 #scrollx_tokens,
                 #scrolly_tokens,
             );
-            ::reactatui::ratatui::widgets::Widget::render(__inner_node, __area, __buf);
+            ::ratatui::widgets::Widget::render(__inner_node, __area, __buf);
         }))
     }}
 }
@@ -293,7 +293,9 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
 
     let has_children = !element.children.is_empty();
 
-    let call = if has_children && (is_known_widget(&component_name) || element.tag.constructor.is_some()) {
+    let call = if has_children
+        && (is_known_widget(&component_name) || element.tag.constructor.is_some())
+    {
         let widget = gen_widget_expr(element, false);
         let child_nodes = element.children.iter().map(gen_node);
         let children_vec = quote! { vec![#(#child_nodes),*] };
@@ -310,11 +312,15 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
         if let Some(ctor_args) = &element.tag.constructor_args {
             quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#ctor_args, #children_vec)) }
         } else {
-            let named_args: Vec<_> = element.props.iter().filter_map(|prop| match prop {
-                Prop::Named { name, value } if name != "children" => Some(quote! { #value }),
-                Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
-                _ => None,
-            }).collect();
+            let named_args: Vec<_> = element
+                .props
+                .iter()
+                .filter_map(|prop| match prop {
+                    Prop::Named { name, value } if name != "children" => Some(quote! { #value }),
+                    Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
+                    _ => None,
+                })
+                .collect();
             if named_args.is_empty() {
                 quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#children_vec)) }
             } else {

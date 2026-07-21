@@ -9,7 +9,6 @@ pub mod hooks;
 pub mod layout;
 pub mod node;
 
-pub use ratatui;
 pub use reactatui_macros::{children, component, tui};
 
 pub use ext::FrameExt;
@@ -22,9 +21,7 @@ pub mod prelude {
         Emitter, KeyHandle, Propagation, State, try_use_global, use_emit, use_global,
         use_global_or_default, use_global_with, use_key, use_on, use_state,
     };
-    pub use crate::{
-        FlexNode, FrameExt, Padding, StateHandle, TuiNode, children, component, ratatui, tui,
-    };
+    pub use crate::{FlexNode, FrameExt, Padding, StateHandle, TuiNode, children, component, tui};
     pub use ratatui::{
         layout::{Alignment, Constraint, Direction, Layout, Rect},
         style::{Color, Modifier, Style},

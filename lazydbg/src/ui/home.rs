@@ -2,8 +2,12 @@ use crate::{
     Args,
     interface::{DbgBackend, DbgSession, GdbBackend, LldbBackend},
 };
-use ratatui::widgets::{Block, Borders, Paragraph};
-use reactatui::{prelude::*, ratatui::crossterm::event::KeyCode};
+use ratatui::{
+    crossterm::event::KeyCode,
+    widgets::{Borders, Paragraph},
+};
+use reactatui::prelude::*;
+use reactatui_widgets::Block;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Panels {
@@ -18,9 +22,9 @@ pub enum Panels {
 pub fn Home<'a>() -> TuiNode<'a> {
     let should_quit = use_global_with("should_quit", || false);
     let active_panel = use_global_with("active-panel", move || Panels::None);
-
-    // Initialize the session once, if not already initialized
     let args = use_global("cli-args");
+    let keys = use_key();
+
     let Args { lldb, .. } = args.get();
     let session = use_global_with("debugger-session", move || {
         let backend: Box<dyn DbgBackend> = if lldb {
@@ -30,8 +34,6 @@ pub fn Home<'a>() -> TuiNode<'a> {
         };
         DbgSession::new(backend)
     });
-
-    let keys = use_key();
 
     let session_is_alive = { session.with_mut(|s| s.is_alive()) };
 
@@ -43,13 +45,21 @@ pub fn Home<'a>() -> TuiNode<'a> {
         session.with_mut(|s| s.stop());
     });
 
-    let keybinds = "Esc -> exit, o -> Open File, a -> set arguments, r -> run";
+    let stop = if session_is_alive {
+        "s -> stop session"
+    } else {
+        "Esc -> exit"
+    };
+    let keybinds = format!("{}, o -> Open File, a -> set arguments, r -> run", stop);
 
     tui! {
-        <Flex direction={Direction::Vertical} gap={1}>
-            <Paragraph::new("Layout demo — Tab/Shift+Tab to focus, Up/Down to scroll, Esc quits")
-                block={Block::default().title_bottom(keybinds).borders(Borders::ALL)}
-            />
+        <Flex direction={Direction::Horizontal} gap={5}>
+            <Block title_bottom={keybinds} borders={Borders::ALL}>
+                <Paragraph::new("Layout demo — Tab/Shift+Tab to focus, Up/Down to scroll, Esc quits") />
+            </Block>
+            <Block borders={Borders::ALL}>
+                <Paragraph::new("right") />
+            </Block>
         </Flex>
     }
 }

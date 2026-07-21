@@ -1,3 +1,4 @@
+use ratatui::widgets::Paragraph;
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{KeyCode, KeyModifiers},
@@ -7,7 +8,6 @@ use ratatui::{
     widgets::{Block, StatefulWidget, Widget},
 };
 use reactatui::prelude::*;
-use reactatui::ratatui::widgets::Paragraph;
 
 /// State for managing text input value and cursor position.
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
