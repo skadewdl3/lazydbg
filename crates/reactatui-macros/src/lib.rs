@@ -44,7 +44,9 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     // Strip `#[children]` attributes from function parameters
     for input_arg in &mut func.sig.inputs {
         if let syn::FnArg::Typed(pat_type) = input_arg {
-            pat_type.attrs.retain(|attr| !attr.path().is_ident("children"));
+            pat_type
+                .attrs
+                .retain(|attr| !attr.path().is_ident("children"));
         }
     }
 

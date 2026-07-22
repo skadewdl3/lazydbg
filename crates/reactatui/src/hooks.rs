@@ -65,6 +65,9 @@ struct HookRuntime {
     prev_hovered: HashSet<u64>,
     /// Maps a component ID to its ancestry path (the id_stack at the time of entry).
     component_paths: HashMap<u64, Rc<Vec<u64>>>,
+    /// Bumped every time a `State` is mutated via `set`/`with_mut`.
+    /// Read by `use_computed` to decide whether to recompute.
+    versions: HashMap<StateKey, u64>,
 }
 
 thread_local! {
@@ -382,13 +385,22 @@ impl<T: 'static> State<T> {
 
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
         let cell = self.get_cell();
-        let mut borrow = cell.borrow_mut();
-        f(borrow.downcast_mut::<T>().expect("use_state type mismatch"))
+        let result = {
+            let mut borrow = cell.borrow_mut();
+            f(borrow.downcast_mut::<T>().expect("use_state type mismatch"))
+        };
+        RUNTIME.with(|rt| {
+            *rt.borrow_mut().versions.entry(self.key).or_insert(0) += 1;
+        });
+        result
     }
 
     pub fn set(&self, value: T) {
         let cell = self.get_cell();
         *cell.borrow_mut() = Box::new(value);
+        RUNTIME.with(|rt| {
+            *rt.borrow_mut().versions.entry(self.key).or_insert(0) += 1;
+        });
     }
 }
 
@@ -479,6 +491,116 @@ pub fn try_use_global<T: 'static>(key: &'static str) -> Option<State<T>> {
         key: StateKey::Keyed(key),
         _marker: std::marker::PhantomData,
     })
+}
+
+/// Derives a value from another `State<T>` and caches it in its own
+/// hook slot, recomputed once every render.
+///
+/// Must be called unconditionally, in the same order, every render —
+/// same rule as `use_state`.
+pub fn use_computed<T: 'static, R: 'static>(
+    source: State<T>,
+    compute: impl FnOnce(&mut T) -> R,
+) -> State<R> {
+    // Borrow `source` just long enough to compute the derived value,
+    // then drop the borrow before touching our own storage.
+    let value: R = source.with_mut(compute);
+
+    RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let component_id = *rt
+            .id_stack
+            .last()
+            .expect("use_computed() called outside of a #[component] function");
+        let index = {
+            let counter = rt
+                .hook_indices
+                .last_mut()
+                .expect("hook index stack unexpectedly empty");
+            let idx = *counter;
+            *counter += 1;
+            idx
+        };
+
+        let boxed: Box<dyn Any> = Box::new(value);
+        match rt.states.get(&(component_id, index)) {
+            Some(cell) => {
+                // Overwrite in place — same cell every frame, so the
+                // returned State<R> handle stays valid across renders.
+                *cell.borrow_mut() = boxed;
+            }
+            None => {
+                rt.states
+                    .insert((component_id, index), Rc::new(RefCell::new(boxed)));
+            }
+        }
+
+        State {
+            key: StateKey::Positional(component_id, index),
+            _marker: std::marker::PhantomData,
+        }
+    })
+}
+
+/// Derives a value from another `State<T>` and caches it in its own hook
+/// slot. The `compute` closure only re-runs when `source` has been mutated
+/// (via `set`/`with_mut`).
+///
+/// Must be called unconditionally, in the same order, every render — same
+/// rule as `use_state`.
+pub fn use_memo<T: 'static, R: 'static>(
+    source: State<T>,
+    compute: impl FnOnce(&mut T) -> R,
+) -> State<R> {
+    // Claim this hook's slot first (bumps hook_indices like any other hook).
+    let (component_id, index) = RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let component_id = *rt
+            .id_stack
+            .last()
+            .expect("use_computed() called outside of a #[component] function");
+        let index = {
+            let counter = rt
+                .hook_indices
+                .last_mut()
+                .expect("hook index stack unexpectedly empty");
+            let idx = *counter;
+            *counter += 1;
+            idx
+        };
+        (component_id, index)
+    });
+    let computed_key = StateKey::Positional(component_id, index);
+
+    let current_version = RUNTIME.with(|rt| *rt.borrow().versions.get(&source.key).unwrap_or(&0));
+    let last_seen_version = RUNTIME.with(|rt| rt.borrow().versions.get(&computed_key).copied());
+    let exists = RUNTIME.with(|rt| rt.borrow().states.contains_key(&(component_id, index)));
+
+    let needs_recompute = !exists || last_seen_version != Some(current_version);
+
+    if needs_recompute {
+        // No RUNTIME borrow is held across this call — safe to re-enter
+        // the runtime from inside `compute` if it ever needs to.
+        let value = source.with_mut(compute);
+
+        RUNTIME.with(|rt| {
+            let mut rt = rt.borrow_mut();
+            let boxed: Box<dyn Any> = Box::new(value);
+            match rt.states.get(&(component_id, index)) {
+                Some(cell) => *cell.borrow_mut() = boxed,
+                None => {
+                    rt.states
+                        .insert((component_id, index), Rc::new(RefCell::new(boxed)));
+                }
+            }
+            rt.versions.insert(computed_key, current_version);
+        });
+    }
+
+    State {
+        key: computed_key,
+        _marker: std::marker::PhantomData,
+    }
 }
 
 /// A handle the current component can use to register key bindings

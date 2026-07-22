@@ -7,6 +7,8 @@ use reactatui::prelude::*;
 use std::{io, time::Duration};
 use ui::Home;
 
+use crate::interface::{DbgBackend, DbgSession, GdbBackend, LldbBackend};
+
 mod components;
 mod interface;
 mod ui;
@@ -19,15 +21,36 @@ struct Args {
     lldb: bool,
 }
 
+fn init<'a>(args: Args) -> Result<(), &'a str> {
+    // Initialize a debug backend based on if the user passes
+    // --gdb or --lldb. Default is --gdb.
+    let backend: Box<dyn DbgBackend> = {
+        if args.lldb && args.gdb {
+            return Err(
+                "Cannot use two debugger backends at once. Please pass either --lldb or --gdb",
+            );
+        } else if args.lldb {
+            Box::new(LldbBackend::new())
+        } else {
+            Box::new(GdbBackend::new())
+        }
+    };
+
+    // Store the debug session in the global state
+    use_global_with("dbg-session", || DbgSession::new(backend));
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
-    if args.gdb && args.lldb {
-        println!("Please select either gdb or lldb backend, not both.");
-        return Ok(());
-    }
 
-    // Transfer args to global state
-    use_global_with("cli-args", move || args);
+    match init(args) {
+        Ok(_) => (),
+        Err(err) => {
+            println!("Error: {}", err);
+            return Ok(());
+        }
+    }
 
     // Start the ratatui app
     let mut terminal = ratatui::try_init()?;
@@ -66,7 +89,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
             }
         }
 
-        if use_global_or_default("should_quit").get() {
+        if use_global_or_default("should-quit").get() {
             break;
         }
     }

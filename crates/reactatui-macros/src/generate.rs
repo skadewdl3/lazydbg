@@ -114,6 +114,9 @@ fn gen_flex(element: &Element) -> TokenStream2 {
                 let _ = value;
                 flex = quote! { compile_error!("spread props are not supported by reactatui v0.3 yet") };
             }
+            Prop::Named { name, value } if name == "layout" => {
+                flex = quote! { #flex.layout(#value) };
+            }
             _ => {}
         }
     }
