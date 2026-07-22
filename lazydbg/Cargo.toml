@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6.3", features = ["derive"] }
+nom = "8.0.0"
 num_enum = "0.7.6"
 ratatui = { workspace = true }
 reactatui = { path = "../crates/reactatui" }
