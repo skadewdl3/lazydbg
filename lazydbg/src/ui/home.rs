@@ -25,6 +25,14 @@ pub fn Home<'a>() -> TuiNode<'a> {
        "esc" => move || open.set(false)
     });
 
+    let binary_path_handler = move |bin: &String| {
+        open.set(false);
+        session.with_mut(|s| {
+            s.open_file(bin.clone());
+        });
+        Propagation::Stop
+    };
+
     tui! {
         <Flex direction={Direction::Vertical} layout={"1fr, 1"}>
             <Flex direction={Direction::Horizontal} gap={1}>
@@ -36,8 +44,8 @@ pub fn Home<'a>() -> TuiNode<'a> {
                 <Stack />
             </Flex>
             <Keybinds />
-            <Dialog::default flex_ignore visible={open.get()}>
-                <Button("Hi mom") />
+            <Dialog::new flex_ignore visible={open.get()} width={"50%"}>
+            <Input("Enter binary", open.get(), true) on:submit={binary_path_handler} />
             </Dialog>
         </Flex>
     }

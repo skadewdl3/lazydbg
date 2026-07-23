@@ -9,7 +9,7 @@ use reactatui::{
 pub fn Keybinds<'a>() -> TuiNode<'a> {
     let active_pane_keybinds = use_global_with(
         "pane-keybinds",
-        || "o -> select binary, r -> run, b -> set breakpoint",
+        || "o -> select binary, r -> run, b -> set breakpoint, q -> quit",
     );
     let keybinds = active_pane_keybinds.get();
 

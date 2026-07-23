@@ -227,29 +227,16 @@ fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
             quote! { #ty::#ctor_ident(#ctor_args) }
         }
     } else {
-        // Legacy behaviour: look up known positional prop names and pull them from named props.
-        let positional = positional_props(&ty_name, &constructor);
-        let args = positional
-            .iter()
-            .filter_map(|name| named_prop(&element.props, name));
         if constructor == "default" {
             quote! { #ty::default() }
         } else {
-            quote! { #ty::#ctor_ident(#(#args),*) }
+            quote! { #ty::#ctor_ident() }
         }
-    };
-
-    // Collect the set of positional prop names to skip them below.
-    let positional = if element.tag.constructor_args.is_none() {
-        positional_props(&ty_name, &constructor)
-    } else {
-        Vec::new()
     };
 
     for prop in &element.props {
         match prop {
             Prop::Named { name, .. } if name == "state" => {}
-            Prop::Named { name, .. } if positional.iter().any(|pos| name == pos) => {}
             Prop::Named { name, .. }
                 if omit_flex_props
                     && matches!(name.to_string().as_str(), "flex" | "min" | "max") => {}
@@ -297,9 +284,7 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
 
     let has_children = !element.children.is_empty();
 
-    let call = if has_children
-        && (is_known_widget(&component_name) || element.tag.constructor.is_some())
-    {
+    let call = if has_children && element.tag.constructor.is_some() {
         let widget = gen_widget_expr(element, false);
         let child_nodes = element.children.iter().map(gen_node);
         let children_vec = quote! { vec![#(#child_nodes),*] };
@@ -334,7 +319,7 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
                 quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#(#named_args),*, #children_vec)) }
             }
         }
-    } else if is_known_widget(&component_name) || element.tag.constructor.is_some() {
+    } else if element.tag.constructor.is_some() {
         let widget = gen_widget_expr(element, false);
         if let Some(state) = named_prop(&element.props, "state") {
             quote! { ::reactatui::TuiNode::from_stateful_widget(#widget, #state) }
@@ -364,27 +349,8 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
     }
 }
 
-fn is_known_widget(name: &str) -> bool {
-    false
-}
-
 fn default_constructor(name: &str) -> &'static str {
-    match name {
-        "Block" | "Gauge" | "Clear" => "default",
-        _ => "new",
-    }
-}
-
-fn positional_props(type_name: &str, constructor: &str) -> Vec<&'static str> {
-    match (type_name, constructor) {
-        ("Paragraph", "new") => vec!["text"],
-        ("Paragraph", "styled") => vec!["text", "style"],
-        ("ListItem", "new") => vec!["text"],
-        ("Input", "new") => vec!["placeholder"],
-        ("Tabs", "new") => vec!["titles"],
-        ("Table", "new") => vec!["rows", "widths"],
-        _ => Vec::new(),
-    }
+    "default"
 }
 
 fn named_prop(props: &[Prop], expected: &str) -> Option<TokenStream2> {

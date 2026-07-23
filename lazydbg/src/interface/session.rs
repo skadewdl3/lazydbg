@@ -16,4 +16,9 @@ impl DbgSession {
     pub fn stop(&mut self) {
         self.backend.kill();
     }
+
+    pub fn open_file<'a>(&mut self, path: String) {
+        self.backend.open_file(path.clone());
+        self.backend.load_symbols(path);
+    }
 }

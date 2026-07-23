@@ -1,3 +1,4 @@
+use crate::parsers::mi::Record;
 use crate::parsers::mi::ser::{ArgValue, CommandSerializer, Error};
 use serde::Serialize;
 use serde::de::DeserializeOwned;

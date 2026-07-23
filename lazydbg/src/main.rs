@@ -7,7 +7,7 @@ use reactatui::prelude::*;
 use std::{io, time::Duration};
 use ui::Home;
 
-use crate::interface::{DbgBackend, DbgSession, GdbBackend, LldbBackend};
+use crate::interface::{DbgBackend, DbgSession, gdb::GdbBackend};
 
 mod components;
 mod interface;
@@ -31,7 +31,7 @@ fn init<'a>(args: Args) -> Result<(), &'a str> {
                 "Cannot use two debugger backends at once. Please pass either --lldb or --gdb",
             );
         } else if args.lldb {
-            Box::new(LldbBackend::new())
+            todo!("LLDB Backend isn't implemented yet");
         } else {
             Box::new(GdbBackend::new())
         }
