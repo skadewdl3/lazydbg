@@ -1,5 +1,4 @@
-use crate::command::MiCommand;
-use crate::value::EmptyReply;
+use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
 use serde::{Deserialize, Serialize, Serializer};
 
 /// Frame under which a varobj expression is evaluated.
@@ -235,5 +234,5 @@ impl VarUpdate {
 }
 impl MiCommand for VarUpdate {
     const OP: &'static str = "var-update";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 } // changelist shape not fully specified in this manual version

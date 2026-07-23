@@ -11,6 +11,7 @@ use crate::interface::{DbgBackend, DbgSession, GdbBackend, LldbBackend};
 
 mod components;
 mod interface;
+mod parsers;
 mod ui;
 
 #[derive(Parser, Debug, Default, Copy, Clone)]

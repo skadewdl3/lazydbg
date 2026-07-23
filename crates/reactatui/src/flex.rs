@@ -70,34 +70,40 @@ impl<'a> FlexNode<'a> {
 
 impl<'a> Widget for FlexNode<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let area = self.padding.apply(area);
-        let count = self.items.len() as u16;
-        if count == 0 || area.width == 0 || area.height == 0 {
-            return;
+        let (ignored, participating): (Vec<_>, Vec<_>) =
+            self.items.into_iter().partition(|item| item.ignore);
+
+        let count = participating.len() as u16;
+        if count != 0 && area.width != 0 && area.height != 0 {
+            let total_gap = self.gap.saturating_mul(count.saturating_sub(1));
+            let available = match self.direction {
+                Direction::Horizontal => area.width.saturating_sub(total_gap),
+                Direction::Vertical => area.height.saturating_sub(total_gap),
+            };
+            let sizes = match &self.layout {
+                Some(units) => layout_sizes(units, available),
+                None => flex_sizes(&participating, available),
+            };
+
+            let mut cursor = match self.direction {
+                Direction::Horizontal => area.x,
+                Direction::Vertical => area.y,
+            };
+
+            for (item, size) in participating.into_iter().zip(sizes) {
+                let item_area = match self.direction {
+                    Direction::Horizontal => Rect::new(cursor, area.y, size, area.height),
+                    Direction::Vertical => Rect::new(area.x, cursor, area.width, size),
+                };
+                item.node.render(item_area, buf);
+                cursor = cursor.saturating_add(size).saturating_add(self.gap);
+            }
         }
 
-        let total_gap = self.gap.saturating_mul(count.saturating_sub(1));
-        let available = match self.direction {
-            Direction::Horizontal => area.width.saturating_sub(total_gap),
-            Direction::Vertical => area.height.saturating_sub(total_gap),
-        };
-        let sizes = match &self.layout {
-            Some(units) => layout_sizes(units, available),
-            None => flex_sizes(&self.items, available),
-        };
-
-        let mut cursor = match self.direction {
-            Direction::Horizontal => area.x,
-            Direction::Vertical => area.y,
-        };
-
-        for (item, size) in self.items.into_iter().zip(sizes) {
-            let item_area = match self.direction {
-                Direction::Horizontal => Rect::new(cursor, area.y, size, area.height),
-                Direction::Vertical => Rect::new(area.x, cursor, area.width, size),
-            };
-            item.node.render(item_area, buf);
-            cursor = cursor.saturating_add(size).saturating_add(self.gap);
+        // Ignored items render last (on top), full padded area — they position
+        // themselves (e.g. a dialog centering within the given area).
+        for item in ignored {
+            item.node.render(area, buf);
         }
     }
 }
@@ -106,6 +112,7 @@ pub struct FlexItemNode<'a> {
     flex: u16,
     pub(crate) min: u16,
     pub(crate) max: u16,
+    pub(crate) ignore: bool,
     node: TuiNode<'a>,
 }
 
@@ -115,6 +122,7 @@ impl<'a> FlexItemNode<'a> {
             flex: 1,
             min: 0,
             max: u16::MAX,
+            ignore: false,
             node: node.into(),
         }
     }
@@ -131,6 +139,11 @@ impl<'a> FlexItemNode<'a> {
 
     pub fn max(mut self, max: u16) -> Self {
         self.max = max;
+        self
+    }
+
+    pub fn flex_ignore(mut self) -> Self {
+        self.ignore = true;
         self
     }
 }

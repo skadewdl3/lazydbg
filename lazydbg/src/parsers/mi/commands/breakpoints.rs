@@ -1,5 +1,4 @@
-use crate::command::MiCommand;
-use crate::value::EmptyReply;
+use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
 use serde::{Deserialize, Serialize};
 
 /// `-break-after number count`
@@ -94,7 +93,7 @@ pub struct BreakInfo {
 }
 impl MiCommand for BreakInfo {
     const OP: &'static str = "break-info";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-break-insert [-t] [-h] [-r] [-c condition] [-i ignore-count] [-p thread] [line|addr]`

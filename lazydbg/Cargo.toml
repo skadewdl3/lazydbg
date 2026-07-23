@@ -10,4 +10,5 @@ num_enum = "0.7.6"
 ratatui = { workspace = true }
 reactatui = { path = "../crates/reactatui" }
 reactatui-widgets = { path = "../crates/reactatui-widgets" }
+serde = { version = "1.0.229", features = ["derive"] }
 strum = { version = "0.28.0", features = ["derive"] }

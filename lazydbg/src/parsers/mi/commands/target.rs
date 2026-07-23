@@ -1,5 +1,4 @@
-use crate::command::MiCommand;
-use crate::value::EmptyReply;
+use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
 use serde::{Deserialize, Serialize};
 
 /// `-target-attach pid|file`
@@ -9,7 +8,7 @@ pub struct TargetAttach {
 }
 impl MiCommand for TargetAttach {
     const OP: &'static str = "target-attach";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-target-compare-sections [section]`
@@ -19,7 +18,7 @@ pub struct TargetCompareSections {
 }
 impl MiCommand for TargetCompareSections {
     const OP: &'static str = "target-compare-sections";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-target-detach`
@@ -53,7 +52,7 @@ pub struct TargetDownloadReply {
 pub struct TargetExecStatus {}
 impl MiCommand for TargetExecStatus {
     const OP: &'static str = "target-exec-status";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-target-list-available-targets`
@@ -61,7 +60,7 @@ impl MiCommand for TargetExecStatus {
 pub struct TargetListAvailableTargets {}
 impl MiCommand for TargetListAvailableTargets {
     const OP: &'static str = "target-list-available-targets";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-target-list-current-targets`
@@ -69,7 +68,7 @@ impl MiCommand for TargetListAvailableTargets {
 pub struct TargetListCurrentTargets {}
 impl MiCommand for TargetListCurrentTargets {
     const OP: &'static str = "target-list-current-targets";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-target-list-parameters`
@@ -77,7 +76,7 @@ impl MiCommand for TargetListCurrentTargets {
 pub struct TargetListParameters {}
 impl MiCommand for TargetListParameters {
     const OP: &'static str = "target-list-parameters";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-target-select type parameters...`
@@ -103,5 +102,5 @@ impl MiCommand for TargetSelect {
 pub struct TargetSelectReply {
     pub addr: String,
     pub func: String,
-    pub args: Vec<crate::Value>,
+    pub args: Vec<crate::parsers::mi::Value>,
 }

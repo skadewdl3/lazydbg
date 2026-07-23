@@ -14,7 +14,7 @@ pub fn Status<'a>() -> TuiNode<'a> {
     let is_alive = use_memo(session, |s| s.is_alive());
 
     tui! {
-        <Block title={"Status"} borders={Borders::ALL}>
+        <Block::default title={"Status"} borders={Borders::ALL}>
             if is_alive.get() {
                 <Paragraph::new("Session is alive and well!") />
             } else {

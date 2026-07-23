@@ -1,6 +1,6 @@
-pub mod breakpoint;
+pub mod breakpoints;
 pub mod data;
-pub mod environment;
+pub mod env;
 pub mod exec;
 pub mod file;
 pub mod misc;
@@ -10,9 +10,9 @@ pub mod target;
 pub mod thread;
 pub mod varobj;
 
-pub use breakpoint::*;
+pub use breakpoints::*;
 pub use data::*;
-pub use environment::*;
+pub use env::*;
 pub use exec::*;
 pub use file::*;
 pub use misc::*;

@@ -110,7 +110,7 @@ impl InputState {
 }
 
 /// A text input widget supporting showing/hiding a cursor and text editing.
-pub struct Input<'a> {
+pub struct InputBase<'a> {
     placeholder: &'a str,
     block: Option<Block<'a>>,
     style: Style,
@@ -118,7 +118,7 @@ pub struct Input<'a> {
     show_cursor: bool,
 }
 
-impl<'a> Input<'a> {
+impl<'a> InputBase<'a> {
     pub fn new(placeholder: &'a str) -> Self {
         Self {
             placeholder,
@@ -150,7 +150,7 @@ impl<'a> Input<'a> {
     }
 }
 
-impl StatefulWidget for Input<'_> {
+impl StatefulWidget for InputBase<'_> {
     type State = InputState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
@@ -178,7 +178,7 @@ impl StatefulWidget for Input<'_> {
 /// A component input widget that tracks internal state, supports showing/hiding cursor,
 /// handles normal text editing keybinds, and emits `"submit"` when Enter is pressed.
 #[component]
-pub fn SimpleInput<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiNode<'a> {
+pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiNode<'a> {
     let state = use_state(InputState::default);
     let submit_emitter = use_emit::<String>("submit");
 
@@ -215,6 +215,6 @@ pub fn SimpleInput<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -
     });
 
     tui! {
-        <Paragraph text={text} />
+        <Paragraph::new(text) />
     }
 }

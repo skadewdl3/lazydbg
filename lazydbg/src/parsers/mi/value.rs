@@ -9,7 +9,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn parse_into<T: DeserializeOwned>(self) -> Result<T, crate::de::Error> {
+    pub fn parse_into<T: DeserializeOwned>(self) -> Result<T, crate::parsers::mi::de::Error> {
         T::deserialize(self)
     }
 }

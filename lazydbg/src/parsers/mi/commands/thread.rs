@@ -1,5 +1,4 @@
-use crate::command::MiCommand;
-use crate::value::EmptyReply;
+use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
 use serde::{Deserialize, Serialize};
 
 /// `-thread-info`
@@ -7,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct ThreadInfo {}
 impl MiCommand for ThreadInfo {
     const OP: &'static str = "thread-info";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-thread-list-all-threads`
@@ -15,7 +14,7 @@ impl MiCommand for ThreadInfo {
 pub struct ThreadListAllThreads {}
 impl MiCommand for ThreadListAllThreads {
     const OP: &'static str = "thread-list-all-threads";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-thread-list-ids`
@@ -28,7 +27,7 @@ impl MiCommand for ThreadListIds {
 #[derive(Deserialize, Debug)]
 pub struct ThreadListIdsReply {
     #[serde(rename = "thread-ids")]
-    pub thread_ids: crate::Value, // empty tuple `{}` or `{thread-id="N",...}`
+    pub thread_ids: crate::parsers::mi::Value, // empty tuple `{}` or `{thread-id="N",...}`
     #[serde(rename = "number-of-threads")]
     pub number_of_threads: String,
 }

@@ -7,7 +7,7 @@ use crate::ui::panes::Pane;
 #[component]
 pub fn Disassembly<'a>() -> TuiNode<'a> {
     tui! {
-        <Block title={"Disassembly"} borders={Borders::ALL}>
+        <Block::default title={"Disassembly"} borders={Borders::ALL}>
             if Pane::Disassembly.is_active() {
                 <Paragraph::new("Active!") />
             }

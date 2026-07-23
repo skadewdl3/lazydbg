@@ -1,4 +1,4 @@
-use crate::command::MiCommand;
+use crate::parsers::mi::command::MiCommand;
 use serde::Serialize;
 
 /// `-symbol-info-address symbol`
@@ -8,7 +8,7 @@ pub struct SymbolInfoAddress {
 }
 impl MiCommand for SymbolInfoAddress {
     const OP: &'static str = "symbol-info-address";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-info-file`
@@ -16,7 +16,7 @@ impl MiCommand for SymbolInfoAddress {
 pub struct SymbolInfoFile {}
 impl MiCommand for SymbolInfoFile {
     const OP: &'static str = "symbol-info-file";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-info-function`
@@ -24,7 +24,7 @@ impl MiCommand for SymbolInfoFile {
 pub struct SymbolInfoFunction {}
 impl MiCommand for SymbolInfoFunction {
     const OP: &'static str = "symbol-info-function";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-info-line`
@@ -32,7 +32,7 @@ impl MiCommand for SymbolInfoFunction {
 pub struct SymbolInfoLine {}
 impl MiCommand for SymbolInfoLine {
     const OP: &'static str = "symbol-info-line";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-info-symbol addr`
@@ -42,7 +42,7 @@ pub struct SymbolInfoSymbol {
 }
 impl MiCommand for SymbolInfoSymbol {
     const OP: &'static str = "symbol-info-symbol";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-list-functions`
@@ -50,7 +50,7 @@ impl MiCommand for SymbolInfoSymbol {
 pub struct SymbolListFunctions {}
 impl MiCommand for SymbolListFunctions {
     const OP: &'static str = "symbol-list-functions";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-list-types`
@@ -58,7 +58,7 @@ impl MiCommand for SymbolListFunctions {
 pub struct SymbolListTypes {}
 impl MiCommand for SymbolListTypes {
     const OP: &'static str = "symbol-list-types";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-list-variables`
@@ -66,7 +66,7 @@ impl MiCommand for SymbolListTypes {
 pub struct SymbolListVariables {}
 impl MiCommand for SymbolListVariables {
     const OP: &'static str = "symbol-list-variables";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-locate`
@@ -74,7 +74,7 @@ impl MiCommand for SymbolListVariables {
 pub struct SymbolLocate {}
 impl MiCommand for SymbolLocate {
     const OP: &'static str = "symbol-locate";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }
 
 /// `-symbol-type variable`
@@ -84,5 +84,5 @@ pub struct SymbolType {
 }
 impl MiCommand for SymbolType {
     const OP: &'static str = "symbol-type";
-    type Reply = crate::Value;
+    type Reply = crate::parsers::mi::Value;
 }

@@ -7,7 +7,7 @@ use crate::ui::panes::Pane;
 #[component]
 pub fn Frame<'a>() -> TuiNode<'a> {
     tui! {
-        <Block title={"Stack Frame"} borders={Borders::ALL}>
+        <Block::default title={"Stack Frame"} borders={Borders::ALL}>
             if Pane::Frame.is_active() {
                 <Paragraph::new("Active!") />
             }

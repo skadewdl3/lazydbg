@@ -1,5 +1,4 @@
-use crate::command::MiCommand;
-use crate::value::EmptyReply;
+use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
 use serde::{Deserialize, Serialize};
 
 /// `-gdb-exit`

@@ -45,7 +45,7 @@ pub fn ScrollableLog<'a>(is_active: bool) -> TuiNode<'a> {
     let lines_str = all_lines.join("\n");
 
     tui! {
-        <Paragraph text={lines_str} scroll={(scroll_y_offset, scroll_x_offset)}
+        <Paragraph::new(lines_str) scroll={(scroll_y_offset, scroll_x_offset)}
             on:scrolly={move |delta: i16| scroll_y(delta)}
             on:scrollx={move |delta: i16| scroll_x(delta)}
         />

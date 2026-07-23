@@ -20,6 +20,6 @@ pub fn List<'a>(#[children] children: Vec<TuiNode<'a>>) -> TuiNode<'a> {
 #[component]
 pub fn ListItem<'a>(text: &'a str) -> TuiNode<'a> {
     tui! {
-        <Paragraph text={text} />
+        <Paragraph::new(text) />
     }
 }

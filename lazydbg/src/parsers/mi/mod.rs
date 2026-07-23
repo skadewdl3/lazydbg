@@ -19,3 +19,12 @@ pub fn parse_line(line: &str) -> Option<Record> {
     }
     parser::record(line).ok().map(|(_, rec)| rec)
 }
+
+// impl<'a, S> Into<Option<Record>> for S
+// where
+//     S: Into<&'a str>,
+// {
+//     fn into(line: S) -> Option<Record> {
+//         None
+//     }
+// }

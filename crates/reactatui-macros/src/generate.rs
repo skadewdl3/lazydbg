@@ -81,8 +81,8 @@ fn gen_flex(element: &Element) -> TokenStream2 {
         Node::Element(element) => {
             let node = gen_element_without_flex(element);
             let mut item = quote! { ::reactatui::FlexItemNode::new(#node) };
-            if let Some(flex) = named_prop(&element.props, "flex") {
-                item = quote! { #item.flex(#flex) };
+            if has_boolean_prop(&element.props, "flex_ignore") {
+                item = quote! { #item.flex_ignore() };
             }
             if let Some(min) = named_prop(&element.props, "min") {
                 item = quote! { #item.min(#min) };
@@ -128,7 +128,7 @@ fn gen_element_without_flex(element: &Element) -> TokenStream2 {
     let mut clone = element.clone();
     clone.props.retain(|prop| match prop {
         Prop::Named { name, .. } | Prop::Boolean(name) => {
-            !matches!(name.to_string().as_str(), "flex" | "min" | "max")
+            !matches!(name.to_string().as_str(), "flex_ignore" | "min" | "max")
         }
         Prop::Spread(_) | Prop::Event { .. } => true,
     });
@@ -256,6 +256,7 @@ fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
             Prop::Named { name, value } => {
                 widget = quote! { #widget.#name(#value) };
             }
+            Prop::Boolean(name) if name == "flex_ignore" => {}
             Prop::Boolean(name) => {
                 widget = quote! { #widget.#name(true) };
             }
@@ -320,6 +321,9 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
                 .iter()
                 .filter_map(|prop| match prop {
                     Prop::Named { name, value } if name != "children" => Some(quote! { #value }),
+                    Prop::Named { name, value } if name != "children" && name != "flex_ignore" => {
+                        Some(quote! { #value })
+                    }
                     Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
                     _ => None,
                 })
@@ -361,10 +365,7 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
 }
 
 fn is_known_widget(name: &str) -> bool {
-    matches!(
-        name,
-        "Block" | "Paragraph" | "Input" | "Tabs" | "Table" | "Gauge" | "Clear"
-    )
+    false
 }
 
 fn default_constructor(name: &str) -> &'static str {
@@ -391,4 +392,10 @@ fn named_prop(props: &[Prop], expected: &str) -> Option<TokenStream2> {
         Prop::Named { name, value } if name == expected => Some(value.clone()),
         _ => None,
     })
+}
+
+fn has_boolean_prop(props: &[Prop], expected: &str) -> bool {
+    props
+        .iter()
+        .any(|prop| matches!(prop, Prop::Boolean(name) if name == expected))
 }
