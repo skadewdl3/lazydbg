@@ -40,7 +40,7 @@ impl MiCommand for VarCreate {
     const OP: &'static str = "var-create";
     type Reply = VarCreateReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarCreateReply {
     pub name: String,
     pub numchild: String,
@@ -103,7 +103,7 @@ impl MiCommand for VarShowFormat {
     const OP: &'static str = "var-show-format";
     type Reply = VarShowFormatReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarShowFormatReply {
     pub format: String,
 }
@@ -117,7 +117,7 @@ impl MiCommand for VarInfoNumChildren {
     const OP: &'static str = "var-info-num-children";
     type Reply = VarInfoNumChildrenReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarInfoNumChildrenReply {
     pub numchild: String,
 }
@@ -131,12 +131,12 @@ impl MiCommand for VarListChildren {
     const OP: &'static str = "var-list-children";
     type Reply = VarListChildrenReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarListChildrenReply {
     pub numchild: String,
     pub children: Vec<VarChild>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarChild {
     pub name: String,
     pub numchild: String,
@@ -153,7 +153,7 @@ impl MiCommand for VarInfoType {
     const OP: &'static str = "var-info-type";
     type Reply = VarInfoTypeReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarInfoTypeReply {
     #[serde(rename = "type")]
     pub ty: String,
@@ -168,7 +168,7 @@ impl MiCommand for VarInfoExpression {
     const OP: &'static str = "var-info-expression";
     type Reply = VarInfoExpressionReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarInfoExpressionReply {
     pub lang: String,
     pub exp: String,
@@ -183,7 +183,7 @@ impl MiCommand for VarShowAttributes {
     const OP: &'static str = "var-show-attributes";
     type Reply = VarShowAttributesReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VarShowAttributesReply {
     pub status: String,
 }

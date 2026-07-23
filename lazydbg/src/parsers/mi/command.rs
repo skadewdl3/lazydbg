@@ -9,7 +9,12 @@ pub trait MiCommand: Serialize {
     /// Set true for commands whose grammar requires "--" between options and
     /// positional args (e.g. `-data-disassemble ... -- mode`).
     const DASH_DASH_BEFORE_POSITIONAL: bool = false;
-    type Reply: DeserializeOwned;
+    type Reply: DeserializeOwned + Serialize;
+
+    /// Parse the results of a record into this command's Reply type.
+    fn parse_reply(record: &Record) -> Option<Result<Self::Reply, crate::parsers::mi::de::Error>> {
+        record.parse_results::<Self::Reply>()
+    }
 }
 
 /// Field naming convention:

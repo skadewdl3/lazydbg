@@ -6,6 +6,7 @@ use strum::EnumCount;
 
 pub mod disassembly;
 pub mod frame;
+pub mod logs;
 pub mod stack;
 pub mod status;
 

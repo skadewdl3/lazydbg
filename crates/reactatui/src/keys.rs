@@ -118,20 +118,44 @@ impl ParsedKeySpec {
 /// directly instead.
 #[macro_export]
 macro_rules! keybindings {
-    ($keys:expr, { $( $($pat:literal)|+ => $handler:expr ),* $(,)? }) => {
-        $(
-            $keys.on_when(
-                {
-                    let __specs = [$(::reactatui::keys::parse_key_spec($pat)),+];
-                    move |__event: &::ratatui::crossterm::event::KeyEvent| {
-                        __specs.iter().any(|__s| __s.matches(__event))
-                    }
-                },
-                {
-                    let mut __h = $handler;
-                    move |_evt: ::ratatui::crossterm::event::KeyEvent| { __h(); }
-                },
-            );
-        )*
+    ($keys:expr, { $($arms:tt)* }) => {
+        $crate::keybindings!(@arm $keys, $($arms)*);
+    };
+
+    (@arm $keys:expr $(,)?) => {};
+
+    // Guarded catch-all: `key(k) if <cond on k: &KeyEvent> => handler`
+    // Handler receives the raw KeyEvent.
+    (@arm $keys:expr, key($k:ident) if $guard:expr => $handler:expr $(, $($rest:tt)*)?) => {
+        $keys.on_when(
+            move |$k: &::ratatui::crossterm::event::KeyEvent| { $guard },
+            {
+                let mut __h = $handler;
+                move |_evt: ::ratatui::crossterm::event::KeyEvent| ->  ::reactatui::hooks::Propagation {
+                    __h(_evt)
+                }
+            },
+        );
+        $crate::keybindings!(@arm $keys, $($($rest)*)?);
+    };
+
+    // Literal key-spec arm(s), e.g. "ctrl+shift+p" | "cmd+p" => handler
+    (@arm $keys:expr, $($pat:literal)|+ => $handler:expr $(, $($rest:tt)*)?) => {
+        $keys.on_when(
+            {
+                let __specs = [$($crate::keys::parse_key_spec($pat)),+];
+                move |__event: &::ratatui::crossterm::event::KeyEvent| {
+                    __specs.iter().any(|__s| __s.matches(__event))
+                }
+            },
+            {
+                let mut __h = $handler;
+                move |_evt: ::ratatui::crossterm::event::KeyEvent| ->  ::reactatui::hooks::Propagation {
+                    __h();
+                     ::reactatui::hooks::Propagation::Stop
+                }
+            },
+        );
+         ::reactatui::keybindings!(@arm $keys, $($($rest)*)?);
     };
 }

@@ -1,7 +1,8 @@
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
+use serde::Serialize;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum Value {
     Str(String),
     Tuple(HashMap<String, Value>),
@@ -61,6 +62,15 @@ impl<'de> serde::de::Deserialize<'de> for Value {
 
 #[derive(Debug, Clone)]
 pub struct EmptyReply {}
+
+impl serde::Serialize for EmptyReply {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str("empty reply")
+    }
+}
 impl<'de> serde::de::Deserialize<'de> for EmptyReply {
     fn deserialize<D>(_d: D) -> Result<Self, D::Error>
     where

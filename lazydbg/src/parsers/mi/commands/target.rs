@@ -36,7 +36,7 @@ impl MiCommand for TargetDownload {
     const OP: &'static str = "target-download";
     type Reply = TargetDownloadReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TargetDownloadReply {
     pub address: String,
     #[serde(rename = "load-size")]
@@ -98,7 +98,7 @@ impl MiCommand for TargetSelect {
     const OP: &'static str = "target-select";
     type Reply = TargetSelectReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TargetSelectReply {
     pub addr: String,
     pub func: String,

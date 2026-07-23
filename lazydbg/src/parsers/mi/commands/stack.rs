@@ -8,11 +8,11 @@ impl MiCommand for StackInfoFrame {
     const OP: &'static str = "stack-info-frame";
     type Reply = StackInfoFrameReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct StackInfoFrameReply {
     pub frame: FrameInfo,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct FrameInfo {
     pub level: Option<String>,
     pub addr: Option<String>,
@@ -41,7 +41,7 @@ impl MiCommand for StackInfoDepth {
     const OP: &'static str = "stack-info-depth";
     type Reply = StackInfoDepthReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct StackInfoDepthReply {
     pub depth: String,
 }
@@ -65,16 +65,16 @@ impl MiCommand for StackListArguments {
     const OP: &'static str = "stack-list-arguments";
     type Reply = StackListArgumentsReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct StackListArgumentsReply {
     #[serde(rename = "stack-args")]
     pub stack_args: Vec<StackFrameArgs>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct StackFrameArgs {
     pub frame: FrameArgsEntry,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct FrameArgsEntry {
     pub level: String,
     pub args: Vec<crate::parsers::mi::Value>,
@@ -99,7 +99,7 @@ impl MiCommand for StackListFrames {
     const OP: &'static str = "stack-list-frames";
     type Reply = StackListFramesReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct StackListFramesReply {
     pub stack: Vec<FrameInfo>,
 }
@@ -120,7 +120,7 @@ impl MiCommand for StackListLocals {
     const OP: &'static str = "stack-list-locals";
     type Reply = StackListLocalsReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct StackListLocalsReply {
     pub locals: Vec<crate::parsers::mi::Value>,
 }

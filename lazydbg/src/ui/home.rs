@@ -1,6 +1,7 @@
 use crate::interface::DbgSession;
 use crate::ui::Keybinds;
 use crate::ui::panes::Pane;
+use crate::ui::panes::logs::Logs;
 use crate::ui::panes::{disassembly::Disassembly, frame::Frame, stack::Stack, status::Status};
 use ratatui::widgets::Paragraph;
 use reactatui::keybindings;
@@ -15,6 +16,7 @@ pub fn Home<'a>() -> TuiNode<'a> {
     let session = use_global::<DbgSession>("dbg-session");
     let keys = use_key();
     let open = use_state(|| false);
+    let logs = use_global_with("logs", Vec::<String>::new);
 
     keybindings!(keys, {
        "q" => move || should_quit.set(true),
@@ -28,6 +30,7 @@ pub fn Home<'a>() -> TuiNode<'a> {
     let binary_path_handler = move |bin: &String| {
         open.set(false);
         session.with_mut(|s| {
+            logs.with_mut(move |l| l.push("Hi mom".into()));
             s.open_file(bin.clone());
         });
         Propagation::Stop
@@ -41,7 +44,8 @@ pub fn Home<'a>() -> TuiNode<'a> {
                     <Frame />
                     <Disassembly />
                 </Flex>
-                <Stack />
+                // <Stack />
+                <Logs is_active={false} />
             </Flex>
             <Keybinds />
             <Dialog::new flex_ignore visible={open.get()} width={"50%"}>

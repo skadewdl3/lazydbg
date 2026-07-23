@@ -1,3 +1,4 @@
+use ratatui::crossterm::event::KeyEvent;
 use ratatui::widgets::Paragraph;
 use ratatui::{
     buffer::Buffer,
@@ -7,7 +8,7 @@ use ratatui::{
     text::Line,
     widgets::{Block, StatefulWidget, Widget},
 };
-use reactatui::prelude::*;
+use reactatui::{keybindings, prelude::*};
 
 /// State for managing text input value and cursor position.
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
@@ -187,19 +188,14 @@ pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiN
         let submit_emitter = submit_emitter.clone();
         let state = state.clone();
 
-        keys.on(KeyCode::Enter, move || {
-            let val = state.with(|s| s.value.clone());
-            submit_emitter.emit(val);
-        });
-
-        keys.on_any(move |event| {
-            if event.code != KeyCode::Tab
-                && event.code != KeyCode::BackTab
-                && event.code != KeyCode::Enter
-            {
-                state.with_mut(|s| {
-                    s.handle_key(event);
-                });
+        keybindings!(keys, {
+            "enter" => move || {
+                let val = state.with(|s| s.value.clone());
+                submit_emitter.emit(val);
+            },
+            key(k) if !matches!(k.code, KeyCode::Tab | KeyCode::BackTab) => move |event| {
+                state.with_mut(|s| s.handle_key(event));
+                Propagation::Stop
             }
         });
     }

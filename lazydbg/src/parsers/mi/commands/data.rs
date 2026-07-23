@@ -21,11 +21,11 @@ impl MiCommand for DataDisassemble {
     const DASH_DASH_BEFORE_POSITIONAL: bool = true;
     type Reply = DataDisassembleReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataDisassembleReply {
     pub asm_insns: Vec<AsmInsn>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct AsmInsn {
     pub address: Option<String>,
     #[serde(rename = "func-name")]
@@ -46,7 +46,7 @@ impl MiCommand for DataEvaluateExpression {
     const OP: &'static str = "data-evaluate-expression";
     type Reply = ValueReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ValueReply {
     pub value: String,
 }
@@ -58,7 +58,7 @@ impl MiCommand for DataListChangedRegisters {
     const OP: &'static str = "data-list-changed-registers";
     type Reply = ChangedRegistersReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ChangedRegistersReply {
     #[serde(rename = "changed-registers")]
     pub changed_registers: Vec<String>,
@@ -83,7 +83,7 @@ impl MiCommand for DataListRegisterNames {
     const OP: &'static str = "data-list-register-names";
     type Reply = RegisterNamesReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterNamesReply {
     #[serde(rename = "register-names")]
     pub register_names: Vec<String>,
@@ -105,12 +105,12 @@ impl MiCommand for DataListRegisterValues {
     const OP: &'static str = "data-list-register-values";
     type Reply = RegisterValuesReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterValuesReply {
     #[serde(rename = "register-values")]
     pub register_values: Vec<RegisterValue>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterValue {
     pub number: String,
     pub value: String,
@@ -173,7 +173,7 @@ impl MiCommand for DataReadMemory {
     const OP: &'static str = "data-read-memory";
     type Reply = DataReadMemoryReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataReadMemoryReply {
     pub addr: String,
     #[serde(rename = "nr-bytes")]
@@ -190,7 +190,7 @@ pub struct DataReadMemoryReply {
     pub prev_page: String,
     pub memory: Vec<MemoryRow>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MemoryRow {
     pub addr: String,
     pub data: Vec<String>,

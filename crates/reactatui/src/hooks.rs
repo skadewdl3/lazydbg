@@ -13,8 +13,9 @@ use ratatui::layout::Rect;
 type AnyCell = Rc<RefCell<Box<dyn Any>>>;
 
 struct KeyBinding {
+    component_id: u64,
     matches: Box<dyn Fn(&KeyEvent) -> bool>,
-    handler: Option<Box<dyn FnMut(KeyEvent)>>,
+    handler: Option<Box<dyn FnMut(KeyEvent) -> Propagation>>,
 }
 
 /// Controls whether a custom-event handler allows the event to continue
@@ -239,14 +240,19 @@ fn contains(rect: Rect, col: u16, row: u16) -> bool {
 /// Run every handler registered this frame whose binding matches.
 /// Returns `true` if at least one handler fired.
 pub fn dispatch_key(event: KeyEvent) -> bool {
-    let indices: Vec<usize> = RUNTIME.with(|rt| {
-        rt.borrow()
-            .key_bindings
+    let mut matches: Vec<(usize, u64, usize)> = RUNTIME.with(|rt| {
+        let rt = rt.borrow();
+        rt.key_bindings
             .iter()
             .enumerate()
             .filter_map(|(i, binding)| {
                 if binding.handler.is_some() && (binding.matches)(&event) {
-                    Some(i)
+                    let depth = rt
+                        .component_paths
+                        .get(&binding.component_id)
+                        .map(|p| p.len())
+                        .unwrap_or(0);
+                    Some((i, binding.component_id, depth))
                 } else {
                     None
                 }
@@ -254,7 +260,30 @@ pub fn dispatch_key(event: KeyEvent) -> bool {
             .collect()
     });
 
+    if matches.is_empty() {
+        return false;
+    }
+
+    // Deepest matching component is the "target" — the thing the key was
+    // really meant for (e.g. the focused widget).
+    let target_id = matches
+        .iter()
+        .max_by_key(|(_, _, depth)| *depth)
+        .map(|(_, id, _)| *id)
+        .unwrap();
+
+    let ancestry_path = RUNTIME
+        .with(|rt| rt.borrow().component_paths.get(&target_id).cloned())
+        .unwrap_or_default();
+
+    // Only bindings on target's own ancestry chain get to bubble;
+    // unrelated matches elsewhere in the tree don't fire.
+    matches.retain(|(_, comp_id, _)| ancestry_path.contains(comp_id));
+    matches.sort_by(|a, b| b.2.cmp(&a.2)); // deepest first
+
+    let indices: Vec<usize> = matches.into_iter().map(|(i, _, _)| i).collect();
     let handled = !indices.is_empty();
+
     for i in indices {
         let Some(mut handler) = RUNTIME.with(|rt| {
             rt.borrow_mut()
@@ -265,13 +294,17 @@ pub fn dispatch_key(event: KeyEvent) -> bool {
             continue;
         };
 
-        handler(event);
+        let propagation = handler(event);
 
         RUNTIME.with(|rt| {
             if let Some(binding) = rt.borrow_mut().key_bindings.get_mut(i) {
                 binding.handler = Some(handler);
             }
         });
+
+        if propagation == Propagation::Stop {
+            break;
+        }
     }
 
     handled
@@ -610,7 +643,7 @@ pub fn use_memo<T: 'static, R: 'static>(
 pub struct KeyHandle;
 
 impl KeyHandle {
-    pub fn on(&self, code: KeyCode, mut handler: impl FnMut() + 'static) {
+    pub fn on(&self, code: KeyCode, mut handler: impl FnMut() -> Propagation + 'static) {
         self.on_when(
             move |event| event.code == code && event.modifiers == KeyModifiers::NONE,
             move |_| handler(),
@@ -621,7 +654,7 @@ impl KeyHandle {
         &self,
         code: KeyCode,
         modifiers: KeyModifiers,
-        mut handler: impl FnMut() + 'static,
+        mut handler: impl FnMut() -> Propagation + 'static,
     ) {
         self.on_when(
             move |event| event.code == code && event.modifiers == modifiers,
@@ -629,20 +662,27 @@ impl KeyHandle {
         );
     }
 
-    /// Receive the full `KeyEvent` for anything a plain `KeyCode`
-    /// match can't express — e.g. forwarding arbitrary typed
-    /// characters into a text input.
-    pub fn on_any(&self, handler: impl FnMut(KeyEvent) + 'static) {
+    /// Kept as `()`-returning for now since arbitrary char-forwarding
+    /// handlers (e.g. text inputs) rarely want to stop propagation —
+    /// but flip this to `-> Propagation` too if you want consistency.
+    /// Shown here matching `on`/`on_modified` for consistency:
+    pub fn on_any(&self, handler: impl FnMut(KeyEvent) -> Propagation + 'static) {
         self.on_when(|_| true, handler);
     }
 
     pub fn on_when(
         &self,
         matches: impl Fn(&KeyEvent) -> bool + 'static,
-        handler: impl FnMut(KeyEvent) + 'static,
+        handler: impl FnMut(KeyEvent) -> Propagation + 'static,
     ) {
         RUNTIME.with(|rt| {
-            rt.borrow_mut().key_bindings.push(KeyBinding {
+            let mut rt = rt.borrow_mut();
+            let component_id = *rt
+                .id_stack
+                .last()
+                .expect("on_when() called outside of a #[component] function");
+            rt.key_bindings.push(KeyBinding {
+                component_id,
                 matches: Box::new(matches),
                 handler: Some(Box::new(handler)),
             });

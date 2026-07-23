@@ -117,11 +117,11 @@ impl MiCommand for BreakInsert {
     const OP: &'static str = "break-insert";
     type Reply = BreakInsertReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BreakInsertReply {
     pub bkpt: BreakpointInfo,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BreakpointInfo {
     pub number: String,
     #[serde(rename = "type")]
@@ -142,18 +142,18 @@ impl MiCommand for BreakList {
     const OP: &'static str = "break-list";
     type Reply = BreakListReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BreakListReply {
     #[serde(rename = "BreakpointTable")]
     pub breakpoint_table: BreakpointTable,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BreakpointTable {
     pub nr_rows: String,
     pub nr_cols: String,
     pub body: Vec<BreakpointTableRow>,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BreakpointTableRow {
     pub bkpt: BreakpointInfo,
 }
@@ -171,11 +171,11 @@ impl MiCommand for BreakWatch {
     const OP: &'static str = "break-watch";
     type Reply = BreakWatchReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct BreakWatchReply {
     pub wpt: WatchpointInfo,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct WatchpointInfo {
     pub number: String,
     pub exp: String,

@@ -28,7 +28,7 @@ impl MiCommand for GdbShow {
     const OP: &'static str = "gdb-show";
     type Reply = GdbShowReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct GdbShowReply {
     pub value: String,
 }

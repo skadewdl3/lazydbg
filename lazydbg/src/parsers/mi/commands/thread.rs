@@ -24,7 +24,7 @@ impl MiCommand for ThreadListIds {
     const OP: &'static str = "thread-list-ids";
     type Reply = ThreadListIdsReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ThreadListIdsReply {
     #[serde(rename = "thread-ids")]
     pub thread_ids: crate::parsers::mi::Value, // empty tuple `{}` or `{thread-id="N",...}`
@@ -48,7 +48,7 @@ impl MiCommand for ThreadSelect {
     const OP: &'static str = "thread-select";
     type Reply = ThreadSelectReply;
 }
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ThreadSelectReply {
     #[serde(rename = "new-thread-id")]
     pub new_thread_id: String,

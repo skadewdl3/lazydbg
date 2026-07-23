@@ -9,7 +9,6 @@ use ui::Home;
 
 use crate::interface::{DbgBackend, DbgSession, gdb::GdbBackend};
 
-mod components;
 mod interface;
 mod parsers;
 mod ui;
