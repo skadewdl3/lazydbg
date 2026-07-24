@@ -1,4 +1,3 @@
-use ratatui::crossterm::event::KeyEvent;
 use ratatui::widgets::Paragraph;
 use ratatui::{
     buffer::Buffer,
@@ -185,8 +184,8 @@ pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiN
 
     if focused {
         let keys = use_key();
-        let submit_emitter = submit_emitter.clone();
-        let state = state.clone();
+        let submit_emitter = submit_emitter;
+        let state = state;
 
         keybindings!(keys, {
             "enter" => move || {

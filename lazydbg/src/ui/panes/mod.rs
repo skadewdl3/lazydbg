@@ -1,7 +1,6 @@
-use std::range::Range;
 
 use num_enum::TryFromPrimitive;
-use reactatui::hooks::{State, use_global, use_global_with};
+use reactatui::hooks::{State, use_global_with};
 use strum::EnumCount;
 
 pub mod disassembly;

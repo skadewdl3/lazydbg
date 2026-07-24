@@ -1,4 +1,4 @@
-use crate::{command::MiCommand, value::EmptyReply};
+use crate::command::MiCommand;
 use serde::{Deserialize, Serialize};
 
 /// `-thread-info`

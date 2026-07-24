@@ -1,4 +1,3 @@
-use ratatui::crossterm::event::KeyCode;
 use reactatui::{keybindings, prelude::*};
 use reactatui_widgets::*;
 

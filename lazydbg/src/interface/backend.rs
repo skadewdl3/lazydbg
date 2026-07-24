@@ -1,6 +1,4 @@
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use lazydbg_mi::{MiCommand, Record};
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum DbgBackendStatus {

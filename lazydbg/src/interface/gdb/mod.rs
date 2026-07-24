@@ -1,6 +1,3 @@
-use ratatui::backend::Backend;
-use reactatui::hooks::use_global;
-
 use lazydbg_mi::{
     MiCommand, Record, build_line,
     commands::{FileExecFile, FileSymbolFile},
@@ -9,12 +6,9 @@ use lazydbg_mi::{
 use thiserror::Error;
 use tracing::{error, info};
 
-use crate::{
-    interface::{DbgBackend, backend::DbgBackendStatus},
-    logger::SharedLogStore,
-};
+use crate::interface::{DbgBackend, backend::DbgBackendStatus};
 use std::{
-    io::{Read, Write},
+    io::Write,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
@@ -86,13 +80,13 @@ impl GdbBackend {
                 );
             }
             let record = parse_line(&line)?;
-            if let Record::Result { token: Some(t), .. } = record {
-                if t == token {
-                    let reply = C::parse_reply(&record)
-                        .expect("reply doesn't contain a map")
-                        .map_err(|e| e.into());
-                    return reply;
-                }
+            if let Record::Result { token: Some(t), .. } = record
+                && t == token
+            {
+                let reply = C::parse_reply(&record)
+                    .expect("reply doesn't contain a map")
+                    .map_err(|e| e.into());
+                return reply;
             }
         }
     }

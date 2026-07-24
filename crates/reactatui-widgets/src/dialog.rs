@@ -1,8 +1,7 @@
 use ratatui::{
-    buffer::{Buffer, Cell},
-    layout::{Alignment, Flex, Layout, Rect},
+    buffer::Buffer,
+    layout::{Flex, Layout, Rect},
     style::Style,
-    text::Line,
     widgets::{BorderType, Borders, Clear, Padding, Widget},
 };
 use reactatui::node::TuiNode;
@@ -51,6 +50,12 @@ pub struct Dialog<'a> {
     clear_background: bool,
     background_style: Option<Style>,
     visible: bool,
+}
+
+impl<'a> Default for Dialog<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a> Dialog<'a> {

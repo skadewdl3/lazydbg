@@ -1,7 +1,7 @@
 use ratatui::widgets::Paragraph;
 use reactatui::{
     TuiNode, component,
-    hooks::{use_global_or_default, use_global_with},
+    hooks::use_global_with,
     tui,
 };
 

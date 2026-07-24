@@ -147,47 +147,42 @@ pub fn dispatch_mouse(event: MouseEvent) {
         match event.kind {
             MouseEventKind::Down(button) => {
                 for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row) {
-                        if let Some(handler) = region.click_handler.take() {
+                    if contains(region.rect, col, row)
+                        && let Some(handler) = region.click_handler.take() {
                             click_handlers_to_run.push((handler, button));
                         }
-                    }
                 }
             }
             MouseEventKind::ScrollUp => {
                 for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row) {
-                        if let Some(handler) = region.scrolly_handler.take() {
+                    if contains(region.rect, col, row)
+                        && let Some(handler) = region.scrolly_handler.take() {
                             scroll_handlers_to_run.push((handler, -1));
                         }
-                    }
                 }
             }
             MouseEventKind::ScrollDown => {
                 for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row) {
-                        if let Some(handler) = region.scrolly_handler.take() {
+                    if contains(region.rect, col, row)
+                        && let Some(handler) = region.scrolly_handler.take() {
                             scroll_handlers_to_run.push((handler, 1));
                         }
-                    }
                 }
             }
             MouseEventKind::ScrollLeft => {
                 for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row) {
-                        if let Some(handler) = region.scrollx_handler.take() {
+                    if contains(region.rect, col, row)
+                        && let Some(handler) = region.scrollx_handler.take() {
                             scroll_handlers_to_run.push((handler, -1));
                         }
-                    }
                 }
             }
             MouseEventKind::ScrollRight => {
                 for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row) {
-                        if let Some(handler) = region.scrollx_handler.take() {
+                    if contains(region.rect, col, row)
+                        && let Some(handler) = region.scrollx_handler.take() {
                             scroll_handlers_to_run.push((handler, 1));
                         }
-                    }
                 }
             }
             MouseEventKind::Moved => {
@@ -198,18 +193,16 @@ pub fn dispatch_mouse(event: MouseEvent) {
                     if contains(region.rect, col, row) {
                         now_hovered.insert(region.id);
                         // Fire on:mousein only when the cursor first enters.
-                        if !prev.contains(&region.id) {
-                            if let Some(handler) = region.mousein_handler.take() {
+                        if !prev.contains(&region.id)
+                            && let Some(handler) = region.mousein_handler.take() {
                                 mousein_handlers_to_run.push(handler);
                             }
-                        }
                     } else {
                         // Fire on:mouseout if it was previously hovered but now is not.
-                        if prev.contains(&region.id) {
-                            if let Some(handler) = region.mouseout_handler.take() {
+                        if prev.contains(&region.id)
+                            && let Some(handler) = region.mouseout_handler.take() {
                                 mouseout_handlers_to_run.push(handler);
                             }
-                        }
                     }
                 }
                 rt.prev_hovered = now_hovered;

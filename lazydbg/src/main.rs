@@ -4,12 +4,12 @@ use ratatui::crossterm::{
     execute,
 };
 use reactatui::prelude::*;
-use std::{io, sync::Arc, time::Duration};
+use std::{io, time::Duration};
 use ui::Home;
 
 use crate::{
     interface::{DbgBackend, DbgSession, gdb::GdbBackend},
-    logger::{LogStore, LoggingLayer, init_logging},
+    logger::init_logging,
 };
 
 mod interface;

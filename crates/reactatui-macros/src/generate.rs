@@ -349,7 +349,7 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
     }
 }
 
-fn default_constructor(name: &str) -> &'static str {
+fn default_constructor(_name: &str) -> &'static str {
     "default"
 }
 

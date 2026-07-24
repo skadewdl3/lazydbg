@@ -15,8 +15,8 @@ pub fn Button<'a>(label: &'a str) -> TuiNode<'a> {
         Style::default().fg(Color::Cyan)
     };
 
-    let hovered_in = hovered.clone();
-    let hovered_out = hovered.clone();
+    let hovered_in = hovered;
+    let hovered_out = hovered;
 
     tui! {
         <Block::default

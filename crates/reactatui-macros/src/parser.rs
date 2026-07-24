@@ -45,8 +45,8 @@ impl Parser {
             return self.parse_for().map(Node::For);
         }
 
-        if let Some(TokenTree::Group(group)) = self.peek().cloned() {
-            if group.delimiter() == Delimiter::Brace {
+        if let Some(TokenTree::Group(group)) = self.peek().cloned()
+            && group.delimiter() == Delimiter::Brace {
                 let mut inner = Parser::new(group.stream());
                 if inner.peek_ident("for") {
                     self.pos += 1;
@@ -63,7 +63,6 @@ impl Parser {
                 self.pos += 1;
                 return Ok(Node::Expr(group.stream()));
             }
-        }
 
         Ok(Node::Expr(self.collect_expression_child()))
     }
@@ -131,12 +130,11 @@ impl Parser {
         }
 
         // Parse optional positional args: `(arg1, arg2)` immediately after the tag/constructor name.
-        if let Some(TokenTree::Group(group)) = self.peek().cloned() {
-            if group.delimiter() == Delimiter::Parenthesis {
+        if let Some(TokenTree::Group(group)) = self.peek().cloned()
+            && group.delimiter() == Delimiter::Parenthesis {
                 self.pos += 1;
                 constructor_args = Some(group.stream());
             }
-        }
 
         Ok(Tag {
             path,
@@ -154,8 +152,8 @@ impl Parser {
         let name = self.expect_ident()?;
 
         // Detect `on:click` / `on:mousein` / `on:mouseout` / `on:scrollx` / `on:scrolly` — single colon (not `::`)
-        if name == "on" {
-            if matches!(self.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ':') {
+        if name == "on"
+            && matches!(self.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ':') {
                 // Make sure the NEXT token after `:` is NOT another `:` (that would be `::`)
                 if !matches!(self.peek_n(1), Some(TokenTree::Punct(p)) if p.as_char() == ':') {
                     self.pos += 1; // consume `:`
@@ -178,7 +176,6 @@ impl Parser {
                     });
                 }
             }
-        }
 
         if !self.consume_punct('=') {
             return Ok(Prop::Boolean(name));
@@ -301,11 +298,10 @@ impl Parser {
         self.expect_punct('/')?;
         let actual = self.parse_tag()?;
         self.expect_punct('>')?;
-        if let Some(expected) = close_tag {
-            if !expected.same_name(&actual) {
+        if let Some(expected) = close_tag
+            && !expected.same_name(&actual) {
                 return Err(self.error("closing tag does not match opening tag"));
             }
-        }
         Ok(())
     }
 

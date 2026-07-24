@@ -2,11 +2,10 @@ use crate::interface::DbgSession;
 use crate::ui::Keybinds;
 use crate::ui::panes::Pane;
 use crate::ui::panes::logs::Logs;
-use crate::ui::panes::{disassembly::Disassembly, frame::Frame, stack::Stack, status::Status};
-use ratatui::widgets::Paragraph;
+use crate::ui::panes::{disassembly::Disassembly, frame::Frame, status::Status};
 use reactatui::keybindings;
 use reactatui::prelude::*;
-use reactatui_widgets::{Button, Dialog, Input};
+use reactatui_widgets::{Dialog, Input};
 
 /// The root UI component containing a title bar and the main multi-pane panel.
 /// Responds to global Esc key to trigger application quit.
@@ -16,7 +15,7 @@ pub fn Home<'a>() -> TuiNode<'a> {
     let session = use_global::<DbgSession>("dbg-session");
     let keys = use_key();
     let open = use_state(|| false);
-    let logs = use_global_with("logs", Vec::<String>::new);
+    let _logs = use_global_with("logs", Vec::<String>::new);
 
     keybindings!(keys, {
        "q" => move || should_quit.set(true),

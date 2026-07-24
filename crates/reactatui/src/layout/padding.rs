@@ -1,6 +1,7 @@
 use ratatui::layout::Rect;
 
 #[derive(Clone, Copy, Default)]
+#[allow(unused)]
 pub struct Padding {
     top: u16,
     right: u16,
@@ -8,6 +9,7 @@ pub struct Padding {
     left: u16,
 }
 
+#[allow(unused)]
 impl Padding {
     pub(crate) fn apply(self, area: Rect) -> Rect {
         let horizontal = self.left.saturating_add(self.right);

@@ -1,5 +1,5 @@
 use crate::{command::MiCommand, value::EmptyReply};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// `-environment-cd pathdir`
 #[derive(Serialize, Default)]

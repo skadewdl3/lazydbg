@@ -17,7 +17,7 @@ macro_rules! deserialize_num {
     ($($method:ident => $visit:ident: $ty:ty),* $(,)?) => {
         $(fn $method<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeserializationError> {
             match self {
-                Value::Str(s) => visitor.$visit(s.parse::<$ty>().map_err(|e| DeserializationError::ParseInt)?),
+                Value::Str(s) => visitor.$visit(s.parse::<$ty>().map_err(|_| DeserializationError::ParseInt)?),
                 other => Err(DeserializationError::ExpectedString(format!("{other:?}"))),
             }
         })*

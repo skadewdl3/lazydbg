@@ -1,4 +1,5 @@
 pub mod command;
+#[allow(unused_doc_comments)]
 pub mod commands;
 pub mod de;
 pub mod error;
@@ -10,7 +11,6 @@ pub mod value;
 pub use command::{MiCommand, build_line};
 use nom::Finish;
 pub use record::{AsyncKind, Record, ResultClass, StreamKind};
-use serde_json::to_string;
 pub use value::Value;
 
 use crate::error::ParseError;
