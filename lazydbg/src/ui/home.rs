@@ -1,4 +1,5 @@
 use crate::interface::DbgSession;
+use crate::interface::backend::DbgFrame;
 use crate::ui::Keybinds;
 use crate::ui::panes::Pane;
 use crate::ui::panes::logs::Logs;

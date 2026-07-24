@@ -1,4 +1,9 @@
-use crate::interface::{DbgBackend, backend::DbgBackendStatus};
+use reactatui::hooks::use_global_with;
+
+use crate::interface::{
+    DbgBackend,
+    backend::{DbgBackendStatus, DbgFrame},
+};
 
 pub struct DbgSession {
     backend: Box<dyn DbgBackend>,
@@ -37,6 +42,8 @@ impl DbgSession {
     }
 
     pub fn frames(&mut self) {
-        self.backend.frames();
+        let f = self.backend.frames().unwrap();
+        let frames = use_global_with::<Vec<Box<dyn DbgFrame>>>("frames", || Vec::new());
+        frames.set(f);
     }
 }

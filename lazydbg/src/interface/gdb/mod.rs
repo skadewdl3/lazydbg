@@ -1,13 +1,18 @@
 use lazydbg_mi::{
     MiCommand, Record, Value, build_line,
-    commands::{BreakInsert, BreakList, ExecRun, FileExecFile, FileSymbolFile, StackListFrames},
+    commands::{
+        BreakInsert, BreakList, ExecRun, FileExecFile, FileSymbolFile, FrameInfo, StackListFrames,
+    },
     parse_line,
     record::AsyncClass,
 };
 use thiserror::Error;
 use tracing::{error, info, trace};
 
-use crate::interface::{DbgBackend, backend::DbgBackendStatus};
+use crate::interface::{
+    DbgBackend,
+    backend::{DbgBackendStatus, DbgFrame},
+};
 use std::{
     collections::HashMap,
     io::Write,
@@ -273,16 +278,47 @@ impl DbgBackend for GdbBackend {
         };
     }
 
-    fn frames(&mut self) {
+    fn frames(&mut self) -> Result<Vec<Box<dyn DbgFrame>>, BackendError> {
         let res = self.send(StackListFrames::default());
 
         match res {
             Ok(reply) => {
-                info!("{:#?}", reply);
+                info!("frame info: {:#?}", reply);
+                let frames: Vec<Box<dyn DbgFrame>> = reply
+                    .stack
+                    .into_iter()
+                    .map(|f| Box::new(f) as Box<dyn DbgFrame>)
+                    .collect();
+                Ok(frames)
             }
             Err(err) => {
-                error!("{}", err.to_string())
+                error!("{}", err.to_string());
+                Err(err)
             }
-        };
+        }
+    }
+}
+
+impl DbgFrame for FrameInfo {
+    fn addr(&self) -> Option<String> {
+        return self.addr.clone();
+    }
+
+    fn func(&self) -> Option<String> {
+        return self.func.clone();
+    }
+    fn file(&self) -> Option<String> {
+        return self.file.clone();
+    }
+    fn line(&self) -> Option<String> {
+        return self.line.clone();
+    }
+
+    fn level(&self) -> Option<String> {
+        return self.level.clone();
+    }
+
+    fn clone_box(&self) -> Box<dyn DbgFrame> {
+        Box::new(self.clone())
     }
 }

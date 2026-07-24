@@ -24,12 +24,12 @@ struct FrameFields {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FrameInfo {
-    level: Option<String>,
-    addr: Option<String>,
-    func: Option<String>,
-    file: Option<String>,
-    line: Option<String>,
-    args: Option<Vec<crate::Value>>,
+    pub level: Option<String>,
+    pub addr: Option<String>,
+    pub func: Option<String>,
+    pub file: Option<String>,
+    pub line: Option<String>,
+    pub args: Option<Vec<crate::Value>>,
 }
 
 impl From<FrameFields> for FrameInfo {

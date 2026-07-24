@@ -1,17 +1,10 @@
-use ratatui::widgets::{Borders, Paragraph};
-use reactatui::{TuiNode, component, tui};
+use lazydbg_mi::commands::FrameInfo;
+use ratatui::{
+    crossterm::event::MouseButton,
+    style::Style,
+    widgets::{Borders, Paragraph},
+};
+use reactatui::{TuiNode, component, hooks::use_emit, tui};
 use reactatui_widgets::Block;
 
 use crate::ui::panes::Pane;
-
-#[component]
-pub fn Stack<'a>() -> TuiNode<'a> {
-    tui! {
-        <Block::default title={"Stack"} borders={Borders::ALL}>
-            if Pane::Stack.is_active() {
-                <Paragraph::new("Active!") />
-            }
-            <Paragraph::new("Call Stack Pane") />
-        </Block>
-    }
-}
