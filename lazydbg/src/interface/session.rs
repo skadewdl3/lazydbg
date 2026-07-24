@@ -21,4 +21,10 @@ impl DbgSession {
         self.backend.open_file(path.clone());
         self.backend.load_symbols(path);
     }
+    pub fn list_breakpoints(&mut self) {
+        self.backend.breakpoints();
+    }
+    pub fn set_breakpoint(&mut self, bp: String) {
+        self.backend.set_breakpoint(bp);
+    }
 }

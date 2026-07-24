@@ -189,7 +189,11 @@ pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiN
 
         keybindings!(keys, {
             "enter" => move || {
-                let val = state.with(|s| s.value.clone());
+                let val = state.with_mut(|s| {
+                    let temp = s.value.clone();
+                    s.value.clear();
+                    temp
+              });
                 submit_emitter.emit(val);
             },
             key(k) if !matches!(k.code, KeyCode::Tab | KeyCode::BackTab) => move |event| {

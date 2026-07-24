@@ -1,6 +1,6 @@
 use lazydbg_mi::{
     MiCommand, Record, build_line,
-    commands::{FileExecFile, FileSymbolFile},
+    commands::{BreakInsert, BreakList, FileExecFile, FileSymbolFile},
     parse_line,
 };
 use thiserror::Error;
@@ -127,6 +127,39 @@ impl DbgBackend for GdbBackend {
     fn load_symbols(&mut self, path: String) {
         let res = self.send(FileSymbolFile {
             positional: Some(path),
+        });
+
+        match res {
+            Ok(reply) => {
+                if let Ok(json) = serde_json::to_string(&reply) {
+                    info!("{}", json);
+                }
+            }
+            Err(err) => {
+                error!("{}", err.to_string())
+            }
+        };
+    }
+
+    fn breakpoints(&mut self) {
+        let res = self.send(BreakList {});
+
+        match res {
+            Ok(reply) => {
+                if let Ok(json) = serde_json::to_string(&reply) {
+                    info!("{}", json);
+                }
+            }
+            Err(err) => {
+                error!("{}", err.to_string())
+            }
+        };
+    }
+
+    fn set_breakpoint(&mut self, bp: String) {
+        let res = self.send(BreakInsert {
+            positional: Some(bp),
+            ..Default::default()
         });
 
         match res {

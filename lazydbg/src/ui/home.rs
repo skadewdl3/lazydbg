@@ -1,11 +1,19 @@
 use crate::interface::DbgSession;
 use crate::ui::Keybinds;
+use crate::ui::home::InputUse::Breakpoint;
 use crate::ui::panes::Pane;
 use crate::ui::panes::logs::Logs;
 use crate::ui::panes::{disassembly::Disassembly, frame::Frame, status::Status};
 use reactatui::keybindings;
 use reactatui::prelude::*;
 use reactatui_widgets::{Dialog, Input};
+
+#[derive(Copy, Clone)]
+enum InputUse {
+    None,
+    Binary,
+    Breakpoint,
+}
 
 /// The root UI component containing a title bar and the main multi-pane panel.
 /// Responds to global Esc key to trigger application quit.
@@ -15,22 +23,39 @@ pub fn Home<'a>() -> TuiNode<'a> {
     let session = use_global::<DbgSession>("dbg-session");
     let keys = use_key();
     let open = use_state(|| false);
-    let _logs = use_global_with("logs", Vec::<String>::new);
+    let input_use = use_state(|| InputUse::None);
+
+    let open_input = move |iu: InputUse| {
+        input_use.set(iu);
+        open.set(true)
+    };
 
     keybindings!(keys, {
        "q" => move || should_quit.set(true),
        "tab" => move || Pane::next(),
        "shift+tab" | "backtab" => move || Pane::prev(),
        "s" => move || session.with_mut(|s| s.stop()),
-       "o" => move || open.set(true),
-       "esc" => move || open.set(false)
+       "o" => move || open_input(InputUse::Binary),
+       "b" => move || open_input(InputUse::Breakpoint),
+       "esc" => move || open.set(false),
+       "l" => move || session.with_mut(|s| s.list_breakpoints())
     });
 
-    let binary_path_handler = move |bin: &String| {
+    let submit_handler = move |string: &String| {
         open.set(false);
-        session.with_mut(|s| {
-            s.open_file(bin.clone());
-        });
+        match input_use.get() {
+            InputUse::Binary => {
+                session.with_mut(|s| {
+                    s.open_file(string.clone());
+                });
+            }
+            InputUse::Breakpoint => {
+                session.with_mut(|s| {
+                    s.set_breakpoint(string.clone());
+                });
+            }
+            _ => {}
+        }
         Propagation::Stop
     };
 
@@ -47,7 +72,7 @@ pub fn Home<'a>() -> TuiNode<'a> {
             </Flex>
             <Keybinds />
             <Dialog::new flex_ignore visible={open.get()} width={"50%"}>
-            <Input("Enter binary", open.get(), true) on:submit={binary_path_handler} />
+            <Input("Enter binary", open.get(), true) on:submit={submit_handler} />
             </Dialog>
         </Flex>
     }

@@ -1,5 +1,3 @@
-
-
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum DbgBackendStatus {
     Active,
@@ -12,4 +10,6 @@ pub trait DbgBackend {
     fn status(&mut self) -> DbgBackendStatus;
     fn open_file(&mut self, path: String);
     fn load_symbols(&mut self, path: String);
+    fn breakpoints(&mut self);
+    fn set_breakpoint(&mut self, bp: String);
 }
