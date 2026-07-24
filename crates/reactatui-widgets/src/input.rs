@@ -180,7 +180,7 @@ impl StatefulWidget for InputBase<'_> {
 #[component]
 pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiNode<'a> {
     let state = use_state(InputState::default);
-    let submit_emitter = use_emit::<String>("submit");
+    let submit_emitter = use_emit::<Option<String>>("submit");
 
     if focused {
         let keys = use_key();
@@ -194,7 +194,11 @@ pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiN
                     s.value.clear();
                     temp
               });
-                submit_emitter.emit(val);
+                submit_emitter.emit(Some(val));
+            },
+            "esc" => move || {
+                state.with_mut(|s| s.value.clear());
+                submit_emitter.emit(None);
             },
             key(k) if !matches!(k.code, KeyCode::Tab | KeyCode::BackTab) => move |event| {
                 state.with_mut(|s| s.handle_key(event));

@@ -38,11 +38,16 @@ pub fn Home<'a>() -> TuiNode<'a> {
        "o" => move || open_input(InputUse::Binary),
        "b" => move || open_input(InputUse::Breakpoint),
        "esc" => move || open.set(false),
-       "l" => move || session.with_mut(|s| s.list_breakpoints())
+       "l" => move || session.with_mut(|s| s.list_breakpoints()),
+       "r" => move || session.with_mut(|s| s.run())
     });
 
-    let submit_handler = move |string: &String| {
+    let submit_handler = move |string: &Option<String>| {
         open.set(false);
+        if let None = string {
+            return Propagation::Stop;
+        }
+        let string = string.clone().unwrap();
         match input_use.get() {
             InputUse::Binary => {
                 session.with_mut(|s| {

@@ -4,11 +4,14 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{
     KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::layout::Rect;
+
+use crate::keys::ParsedKeySpec;
 
 type AnyCell = Rc<RefCell<Box<dyn Any>>>;
 
@@ -16,6 +19,16 @@ struct KeyBinding {
     component_id: u64,
     matches: Box<dyn Fn(&KeyEvent) -> bool>,
     handler: Option<Box<dyn FnMut(KeyEvent) -> Propagation>>,
+}
+
+const CHORD_TIMEOUT: Duration = Duration::from_millis(1000);
+
+struct ChordBinding {
+    // Each inner Vec is one alternative full sequence, e.g. `"g-g" | "home"`
+    // registers two alternatives, lengths 2 and 1.
+    alternatives: Vec<Vec<ParsedKeySpec>>,
+    handler: Option<Box<dyn FnMut() -> Propagation>>,
+    component_id: u64,
 }
 
 /// Controls whether a custom-event handler allows the event to continue
@@ -69,6 +82,9 @@ struct HookRuntime {
     /// Bumped every time a `State` is mutated via `set`/`with_mut`.
     /// Read by `use_computed` to decide whether to recompute.
     versions: HashMap<StateKey, u64>,
+    chord_bindings: Vec<ChordBinding>,
+    chord_pending: Vec<KeyEvent>,
+    chord_last_event_at: Option<Instant>,
 }
 
 thread_local! {
@@ -90,6 +106,7 @@ pub fn begin_frame() {
         // mouse_regions are cleared here; prev_hovered is preserved across frames
         // so hover-enter detection works.
         rt.mouse_regions.clear();
+        rt.chord_bindings.clear();
     });
 }
 
@@ -148,41 +165,46 @@ pub fn dispatch_mouse(event: MouseEvent) {
             MouseEventKind::Down(button) => {
                 for region in rt.mouse_regions.iter_mut() {
                     if contains(region.rect, col, row)
-                        && let Some(handler) = region.click_handler.take() {
-                            click_handlers_to_run.push((handler, button));
-                        }
+                        && let Some(handler) = region.click_handler.take()
+                    {
+                        click_handlers_to_run.push((handler, button));
+                    }
                 }
             }
             MouseEventKind::ScrollUp => {
                 for region in rt.mouse_regions.iter_mut() {
                     if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrolly_handler.take() {
-                            scroll_handlers_to_run.push((handler, -1));
-                        }
+                        && let Some(handler) = region.scrolly_handler.take()
+                    {
+                        scroll_handlers_to_run.push((handler, -1));
+                    }
                 }
             }
             MouseEventKind::ScrollDown => {
                 for region in rt.mouse_regions.iter_mut() {
                     if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrolly_handler.take() {
-                            scroll_handlers_to_run.push((handler, 1));
-                        }
+                        && let Some(handler) = region.scrolly_handler.take()
+                    {
+                        scroll_handlers_to_run.push((handler, 1));
+                    }
                 }
             }
             MouseEventKind::ScrollLeft => {
                 for region in rt.mouse_regions.iter_mut() {
                     if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrollx_handler.take() {
-                            scroll_handlers_to_run.push((handler, -1));
-                        }
+                        && let Some(handler) = region.scrollx_handler.take()
+                    {
+                        scroll_handlers_to_run.push((handler, -1));
+                    }
                 }
             }
             MouseEventKind::ScrollRight => {
                 for region in rt.mouse_regions.iter_mut() {
                     if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrollx_handler.take() {
-                            scroll_handlers_to_run.push((handler, 1));
-                        }
+                        && let Some(handler) = region.scrollx_handler.take()
+                    {
+                        scroll_handlers_to_run.push((handler, 1));
+                    }
                 }
             }
             MouseEventKind::Moved => {
@@ -194,15 +216,17 @@ pub fn dispatch_mouse(event: MouseEvent) {
                         now_hovered.insert(region.id);
                         // Fire on:mousein only when the cursor first enters.
                         if !prev.contains(&region.id)
-                            && let Some(handler) = region.mousein_handler.take() {
-                                mousein_handlers_to_run.push(handler);
-                            }
+                            && let Some(handler) = region.mousein_handler.take()
+                        {
+                            mousein_handlers_to_run.push(handler);
+                        }
                     } else {
                         // Fire on:mouseout if it was previously hovered but now is not.
                         if prev.contains(&region.id)
-                            && let Some(handler) = region.mouseout_handler.take() {
-                                mouseout_handlers_to_run.push(handler);
-                            }
+                            && let Some(handler) = region.mouseout_handler.take()
+                        {
+                            mouseout_handlers_to_run.push(handler);
+                        }
                     }
                 }
                 rt.prev_hovered = now_hovered;
@@ -233,6 +257,45 @@ fn contains(rect: Rect, col: u16, row: u16) -> bool {
 /// Run every handler registered this frame whose binding matches.
 /// Returns `true` if at least one handler fired.
 pub fn dispatch_key(event: KeyEvent) -> bool {
+    // Figure out how deep the best `key_bindings` candidate is *before*
+    // committing to chord handling. This is what was missing before:
+    // chords used to run unconditionally and could swallow an event —
+    // even just as an in-progress partial sequence — with no idea that a
+    // deeper, more specific `on`/`on_when` handler existed and wanted to
+    // fire (and possibly return `Propagation::Stop`).
+    let key_depth = peek_key_binding_target_depth(event);
+
+    if let Some(handled) = try_dispatch_chord(event, key_depth) {
+        return handled;
+    }
+
+    dispatch_key_bindings(event)
+}
+
+/// Read-only lookup of the deepest `key_bindings` component whose matcher
+/// fires for `event`, without taking or running any handler. Used only to
+/// compare against chord candidates so the two systems can agree on who
+/// gets the event before either commits to handling it.
+fn peek_key_binding_target_depth(event: KeyEvent) -> Option<usize> {
+    RUNTIME.with(|rt| {
+        let rt = rt.borrow();
+        rt.key_bindings
+            .iter()
+            .filter(|binding| binding.handler.is_some() && (binding.matches)(&event))
+            .map(|binding| {
+                rt.component_paths
+                    .get(&binding.component_id)
+                    .map(|p| p.len())
+                    .unwrap_or(0)
+            })
+            .max()
+    })
+}
+
+/// The regular (non-chord) dispatch path — this is the old body of
+/// `dispatch_key`, split out so `dispatch_key` can decide whether chords
+/// or plain bindings get first crack at an event.
+fn dispatch_key_bindings(event: KeyEvent) -> bool {
     let mut matches: Vec<(usize, u64, usize)> = RUNTIME.with(|rt| {
         let rt = rt.borrow();
         rt.key_bindings
@@ -303,6 +366,160 @@ pub fn dispatch_key(event: KeyEvent) -> bool {
     handled
 }
 
+/// Returns `Some(handled)` if chord matching claimed this event (fired a
+/// handler, or swallowed it as an in-progress prefix). Returns `None` if
+/// chords don't apply this time — either because nothing matches, or
+/// because a strictly-more-specific (or equally specific) regular
+/// `key_bindings` handler exists and should get the event instead.
+///
+/// `key_depth` is the depth of the deepest matching `key_bindings` target
+/// for this event (see `peek_key_binding_target_depth`), computed by the
+/// caller so both systems can be compared before either one commits to
+/// handling the event.
+fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool> {
+    let now = Instant::now();
+
+    let (has_chords, mut pending) = RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let timed_out = rt
+            .chord_last_event_at
+            .map(|t| now.duration_since(t) > CHORD_TIMEOUT)
+            .unwrap_or(false);
+        if timed_out {
+            rt.chord_pending.clear();
+        }
+        (!rt.chord_bindings.is_empty(), rt.chord_pending.clone())
+    });
+
+    if !has_chords && pending.is_empty() {
+        return None;
+    }
+
+    let had_prior_pending = !pending.is_empty();
+    pending.push(event);
+
+    // Collect (index, component_id, depth) for every binding that fully
+    // matches, same shape dispatch_key uses for key_bindings. Also track
+    // the deepest component involved in a *partial* match, so we can
+    // compare against key_depth before committing to swallowing the event.
+    let (mut full_matches, partial_depth): (Vec<(usize, u64, usize)>, Option<usize>) = RUNTIME
+        .with(|rt| {
+            let rt = rt.borrow();
+            let mut full_matches = Vec::new();
+            let mut partial_depth: Option<usize> = None;
+            for (i, binding) in rt.chord_bindings.iter().enumerate() {
+                let depth = rt
+                    .component_paths
+                    .get(&binding.component_id)
+                    .map(|p| p.len())
+                    .unwrap_or(0);
+                for alt in &binding.alternatives {
+                    if pending.len() > alt.len() {
+                        continue;
+                    }
+                    let step_ok = pending.iter().zip(alt).all(|(e, s)| s.matches(e));
+                    if !step_ok {
+                        continue;
+                    }
+                    if pending.len() == alt.len() {
+                        full_matches.push((i, binding.component_id, depth));
+                    } else {
+                        partial_depth = Some(partial_depth.map_or(depth, |d: usize| d.max(depth)));
+                    }
+                }
+            }
+            (full_matches, partial_depth)
+        });
+
+    // --- Full match: fire it, unless a strictly-more-specific (or
+    // equally specific) key_bindings handler exists — in which case defer
+    // to that instead. Either way the sequence is over, so clear pending.
+    if !full_matches.is_empty() {
+        let chord_target_depth = full_matches.iter().map(|(_, _, d)| *d).max().unwrap_or(0);
+        let key_wins = key_depth.map_or(false, |kd| kd >= chord_target_depth);
+
+        RUNTIME.with(|rt| {
+            let mut rt = rt.borrow_mut();
+            rt.chord_pending.clear();
+            rt.chord_last_event_at = None;
+        });
+
+        if key_wins {
+            return None;
+        }
+
+        // Deepest matching component is the target; only its own ancestry
+        // chain gets a chance to fire, deepest first — mirrors dispatch_key.
+        let target_id = full_matches
+            .iter()
+            .max_by_key(|(_, _, depth)| *depth)
+            .map(|(_, id, _)| *id)
+            .unwrap();
+
+        let ancestry_path = RUNTIME
+            .with(|rt| rt.borrow().component_paths.get(&target_id).cloned())
+            .unwrap_or_default();
+
+        full_matches.retain(|(_, comp_id, _)| ancestry_path.contains(comp_id));
+        full_matches.sort_by(|a, b| b.2.cmp(&a.2)); // deepest first
+
+        for (i, _, _) in full_matches {
+            let Some(mut handler) = RUNTIME.with(|rt| {
+                rt.borrow_mut()
+                    .chord_bindings
+                    .get_mut(i)
+                    .and_then(|b| b.handler.take())
+            }) else {
+                continue;
+            };
+
+            let propagation = handler();
+
+            RUNTIME.with(|rt| {
+                if let Some(b) = rt.borrow_mut().chord_bindings.get_mut(i) {
+                    b.handler = Some(handler);
+                }
+            });
+
+            if propagation == Propagation::Stop {
+                break;
+            }
+        }
+
+        return Some(true);
+    }
+
+    // --- Partial match only (sequence still in progress): swallow the
+    // event and wait for the next key, unless key_bindings has an
+    // equally-or-more-specific handler for this exact event — in which
+    // case leave the chord's pending state completely untouched and let
+    // key_bindings handle it. This is the branch that used to break
+    // `Propagation::Stop`: it used to swallow unconditionally here.
+    if let Some(depth) = partial_depth {
+        let key_wins = key_depth.map_or(false, |kd| kd >= depth);
+        if key_wins {
+            return None;
+        }
+
+        RUNTIME.with(|rt| {
+            let mut rt = rt.borrow_mut();
+            rt.chord_pending = pending;
+            rt.chord_last_event_at = Some(now);
+        });
+        return Some(true);
+    }
+
+    RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        rt.chord_pending.clear();
+        rt.chord_last_event_at = None;
+    });
+
+    if had_prior_pending {
+        return try_dispatch_chord(event, key_depth);
+    }
+    None
+}
 #[doc(hidden)]
 #[must_use]
 pub struct ComponentGuard;
@@ -678,6 +895,25 @@ impl KeyHandle {
                 component_id,
                 matches: Box::new(matches),
                 handler: Some(Box::new(handler)),
+            });
+        });
+    }
+
+    pub fn on_chord(
+        &self,
+        alternatives: Vec<Vec<ParsedKeySpec>>,
+        mut handler: impl FnMut() -> Propagation + 'static,
+    ) {
+        RUNTIME.with(|rt| {
+            let mut rt = rt.borrow_mut();
+            let component_id = *rt
+                .id_stack
+                .last()
+                .expect("on_chord() called outside of a #[component] function");
+            rt.chord_bindings.push(ChordBinding {
+                component_id,
+                alternatives,
+                handler: Some(Box::new(move || handler())),
             });
         });
     }

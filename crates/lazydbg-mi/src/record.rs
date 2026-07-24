@@ -27,6 +27,56 @@ pub enum StreamKind {
 } // ~ @ &
 
 #[derive(Debug, Clone)]
+pub enum AsyncClass {
+    // Exec (*)
+    Running,
+    Stopped,
+
+    // Status (+)
+    Download,
+
+    // Notify (=)
+
+    // Thread groups
+    ThreadGroupAdded,
+    ThreadGroupRemoved,
+    ThreadGroupStarted,
+    ThreadGroupExited,
+
+    // Threads
+    ThreadCreated,
+    ThreadExited,
+    ThreadSelected,
+
+    // Shared libraries
+    LibraryLoaded,
+    LibraryUnloaded,
+
+    // Breakpoints
+    BreakpointCreated,
+    BreakpointModified,
+    BreakpointDeleted,
+
+    // Tracepoints / tracing
+    TraceframeChanged,
+    TsvCreated,
+    TsvModified,
+    TsvDeleted,
+
+    // Process recording
+    RecordStarted,
+    RecordStopped,
+
+    // Misc
+    CmdParamChanged,
+    MemoryChanged,
+    RegisterChanged,
+
+    // Forward compatibility
+    Unknown(Box<str>),
+}
+
+#[derive(Debug, Clone)]
 pub enum Record {
     Result {
         token: Option<u64>,
@@ -36,7 +86,7 @@ pub enum Record {
     Async {
         token: Option<u64>,
         kind: AsyncKind,
-        class: String,
+        class: AsyncClass,
         results: HashMap<String, Value>,
     },
     Stream {

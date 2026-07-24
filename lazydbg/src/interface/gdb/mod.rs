@@ -1,26 +1,35 @@
 use lazydbg_mi::{
-    MiCommand, Record, build_line,
-    commands::{BreakInsert, BreakList, FileExecFile, FileSymbolFile},
+    MiCommand, Record, Value, build_line,
+    commands::{BreakInsert, BreakList, ExecRun, FileExecFile, FileSymbolFile},
     parse_line,
+    record::AsyncClass,
 };
 use thiserror::Error;
 use tracing::{error, info};
 
 use crate::interface::{DbgBackend, backend::DbgBackendStatus};
 use std::{
+    collections::HashMap,
     io::Write,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::{Arc, Mutex, mpsc},
+    thread::{self, JoinHandle},
 };
 
 use std::io;
 use std::io::{BufRead, BufReader};
 
+type PendingMap = Arc<Mutex<HashMap<u64, mpsc::Sender<Record>>>>;
+type AsyncListener = Box<dyn Fn(&AsyncClass, &HashMap<String, Value>) + Send + 'static>;
+
 pub struct GdbBackend {
     pub process: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    reader: JoinHandle<()>,
     status: DbgBackendStatus,
     token: u64,
+    pending: Arc<Mutex<HashMap<u64, mpsc::Sender<Record>>>>,
+    async_listeners: Arc<Mutex<Vec<AsyncListener>>>,
 }
 
 #[derive(Debug, Error)]
@@ -45,16 +54,80 @@ impl GdbBackend {
             .expect("Unable to run `gdb --interpreter=mi3`. Please make sure `gdb` is on path.");
 
         let stdin = process.stdin.take().unwrap();
-        let stdout = BufReader::new(process.stdout.take().unwrap());
+        let stdout = process.stdout.take().unwrap();
+
+        let pending: Arc<Mutex<HashMap<u64, mpsc::Sender<Record>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let pending_reader = Arc::clone(&pending);
+
+        let async_listeners: Arc<Mutex<Vec<AsyncListener>>> = Arc::new(Mutex::new(Vec::new()));
+        let listeners_reader = Arc::clone(&async_listeners);
+
+        let reader = thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) => {
+                        // EOF: gdb exited, stop reading
+                        break;
+                    }
+                    Ok(_) => {
+                        let record = match parse_line(&line) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                error!("failed to parse MI line {:?}: {}", line, e);
+                                continue;
+                            }
+                        };
+
+                        match &record {
+                            Record::Result { token: Some(t), .. } => {
+                                let sender = pending_reader.lock().unwrap().remove(t);
+                                match sender {
+                                    Some(tx) => {
+                                        let _ = tx.send(record);
+                                    }
+                                    None => {
+                                        error!("received result for unknown token {}", t);
+                                    }
+                                }
+                            }
+                            Record::Async { class, results, .. } => {
+                                info!("{:?}: {:#?}", class, results);
+                                let listeners = listeners_reader.lock().unwrap();
+                                for listener in listeners.iter() {
+                                    listener(class, results);
+                                }
+                            }
+                            _ => {
+                                // Stream records (console/target/log) and Prompt
+                                // are dropped here for now.
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("error reading from gdb stdout: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
 
         Self {
             process,
             stdin,
-            stdout,
+            reader,
             status: DbgBackendStatus::Active,
             token: 0,
+            pending,
+            async_listeners,
         }
     }
+
+    fn register_async_listeners(&mut self) {}
 
     pub fn use_token(&mut self) -> u64 {
         let tk = self.token;
@@ -64,34 +137,51 @@ impl GdbBackend {
 
     pub fn send<C: MiCommand>(&mut self, cmd: C) -> Result<C::Reply, BackendError> {
         let token = self.use_token();
-        let cmd_str =
-            build_line(&cmd, token).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        let cmd_str = build_line(&cmd, token)?;
+
+        let (tx, rx) = mpsc::channel();
+        self.pending.lock().unwrap().insert(token, tx);
+
         self.stdin.write_all(cmd_str.as_bytes())?;
         self.stdin.flush()?;
 
-        let mut line = String::new();
+        let record = rx.recv().map_err(|_| {
+            BackendError::Io(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "reader thread died",
+            ))
+        })?;
 
-        loop {
-            line.clear();
-            let bytes_read = self.stdout.read_line(&mut line)?;
-            if bytes_read == 0 {
-                return Err(
-                    io::Error::new(std::io::ErrorKind::UnexpectedEof, "GDB closed stdout").into(),
-                );
-            }
-            let record = parse_line(&line)?;
-            if let Record::Result { token: Some(t), .. } = record
-                && t == token
-            {
-                let reply = C::parse_reply(&record)
-                    .expect("reply doesn't contain a map")
-                    .map_err(|e| e.into());
-                return reply;
-            }
-        }
+        C::parse_reply(&record).unwrap().map_err(|err| err.into())
+    }
+
+    /// Register a listener that runs whenever an async record matching
+    /// `wanted` comes in. `AsyncClass::Unknown` compares by inner string,
+    /// so registering for `AsyncClass::Unknown("foo".into())` only fires
+    /// for that exact unrecognized class name.
+    pub fn on_async<F>(&mut self, wanted: AsyncClass, callback: F)
+    where
+        F: Fn(&HashMap<String, Value>) + Send + 'static,
+    {
+        self.async_listeners.lock().unwrap().push(Box::new(
+            move |class: &AsyncClass, results: &HashMap<String, Value>| {
+                let matches = match (&wanted, class) {
+                    (AsyncClass::Unknown(w), AsyncClass::Unknown(c)) => w == c,
+                    _ => std::mem::discriminant(class) == std::mem::discriminant(&wanted),
+                };
+                if matches {
+                    callback(results);
+                }
+            },
+        ));
     }
 }
+
 impl DbgBackend for GdbBackend {
+    fn init(&mut self) {
+        self.register_async_listeners();
+    }
+
     fn kill(&mut self) {
         self.status = DbgBackendStatus::Waiting;
         self.process.kill().unwrap();
@@ -161,6 +251,21 @@ impl DbgBackend for GdbBackend {
             positional: Some(bp),
             ..Default::default()
         });
+
+        match res {
+            Ok(reply) => {
+                if let Ok(json) = serde_json::to_string(&reply) {
+                    info!("{}", json);
+                }
+            }
+            Err(err) => {
+                error!("{}", err.to_string())
+            }
+        };
+    }
+
+    fn run(&mut self) {
+        let res = self.send(ExecRun {});
 
         match res {
             Ok(reply) => {

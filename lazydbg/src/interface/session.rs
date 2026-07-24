@@ -6,6 +6,8 @@ pub struct DbgSession {
 
 impl DbgSession {
     pub fn new(backend: Box<dyn DbgBackend>) -> Self {
+        let mut backend = backend;
+        backend.init();
         Self { backend }
     }
 
@@ -21,10 +23,16 @@ impl DbgSession {
         self.backend.open_file(path.clone());
         self.backend.load_symbols(path);
     }
+
     pub fn list_breakpoints(&mut self) {
         self.backend.breakpoints();
     }
+
     pub fn set_breakpoint(&mut self, bp: String) {
         self.backend.set_breakpoint(bp);
+    }
+
+    pub fn run(&mut self) {
+        self.backend.run();
     }
 }

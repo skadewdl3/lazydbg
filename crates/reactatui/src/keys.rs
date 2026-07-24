@@ -14,6 +14,26 @@ pub struct ParsedKeySpec {
     shifted: bool,
 }
 
+/// A chorded sequence of key specs, e.g. `"ctrl+k-ctrl+s"` (press ctrl+k,
+/// then ctrl+s). A plain `"ctrl+s"` parses to a single-step chord, so this
+/// subsumes the non-chorded case.
+#[derive(Debug, Clone)]
+pub struct ParsedChord {
+    pub steps: Vec<ParsedKeySpec>,
+}
+
+pub fn parse_chord_spec(spec: &str) -> ParsedChord {
+    let steps: Vec<ParsedKeySpec> = spec
+        .split('-')
+        .map(|step| parse_key_spec(step.trim()))
+        .collect();
+    assert!(
+        !steps.is_empty(),
+        "keybindings!: empty chord spec \"{spec}\""
+    );
+    ParsedChord { steps }
+}
+
 pub fn parse_key_spec(spec: &str) -> ParsedKeySpec {
     let parts: Vec<&str> = spec.split('+').map(str::trim).collect();
     let (mod_parts, key_part) = parts.split_at(parts.len().saturating_sub(1));
@@ -61,6 +81,8 @@ fn parse_keycode(key: &str, spec: &str) -> KeyCode {
         "insert" | "ins" => KeyCode::Insert,
         "space" => KeyCode::Char(' '),
         "null" => KeyCode::Null,
+        "minus" | "hyphen" => KeyCode::Char('-'),
+        "plus" => KeyCode::Char('+'),
         _ if lower.starts_with('f') && lower[1..].parse::<u8>().is_ok() => {
             KeyCode::F(lower[1..].parse().unwrap())
         }
@@ -124,38 +146,61 @@ macro_rules! keybindings {
 
     (@arm $keys:expr $(,)?) => {};
 
-    // Guarded catch-all: `key(k) if <cond on k: &KeyEvent> => handler`
-    // Handler receives the raw KeyEvent.
-    (@arm $keys:expr, key($k:ident) if $guard:expr => $handler:expr $(, $($rest:tt)*)?) => {
+    // Guarded catch-all:
+    // key(k) if <condition using &KeyEvent> => handler
+    (@arm $keys:expr,
+        key($k:ident) if $guard:expr => $handler:expr
+        $(, $($rest:tt)*)?
+    ) => {
         $keys.on_when(
-            move |$k: &::ratatui::crossterm::event::KeyEvent| { $guard },
+            move |$k: &::ratatui::crossterm::event::KeyEvent| {
+                $guard
+            },
             {
                 let mut __h = $handler;
-                move |_evt: ::ratatui::crossterm::event::KeyEvent| ->  ::reactatui::hooks::Propagation {
-                    __h(_evt)
+
+                move |__evt: ::ratatui::crossterm::event::KeyEvent|
+                    -> ::reactatui::hooks::Propagation
+                {
+                    __h(__evt)
                 }
             },
         );
+
         $crate::keybindings!(@arm $keys, $($($rest)*)?);
     };
 
-    // Literal key-spec arm(s), e.g. "ctrl+shift+p" | "cmd+p" => handler
-    (@arm $keys:expr, $($pat:literal)|+ => $handler:expr $(, $($rest:tt)*)?) => {
+    // Literal key specs
+    (@arm $keys:expr,
+        $($pat:literal)|+ => $handler:expr
+        $(, $($rest:tt)*)?
+    ) => {
         $keys.on_when(
-            {
-                let __specs = [$($crate::keys::parse_key_spec($pat)),+];
-                move |__event: &::ratatui::crossterm::event::KeyEvent| {
-                    __specs.iter().any(|__s| __s.matches(__event))
-                }
+            move |event: &::ratatui::crossterm::event::KeyEvent| {
+                $(
+                    if $crate::keys::parse_chord_spec($pat)
+                        .steps
+                        .iter()
+                        .all(|s| s.matches(event))
+                    {
+                        return true;
+                    }
+                )+
+
+                false
             },
             {
                 let mut __h = $handler;
-                move |_evt: ::ratatui::crossterm::event::KeyEvent| ->  ::reactatui::hooks::Propagation {
+
+                move |_event: ::ratatui::crossterm::event::KeyEvent|
+                    -> ::reactatui::hooks::Propagation
+                {
                     __h();
-                     ::reactatui::hooks::Propagation::Stop
+                    ::reactatui::hooks::Propagation::Stop
                 }
             },
         );
-         ::reactatui::keybindings!(@arm $keys, $($($rest)*)?);
+
+        $crate::keybindings!(@arm $keys, $($($rest)*)?);
     };
 }

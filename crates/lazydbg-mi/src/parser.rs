@@ -1,4 +1,4 @@
-use crate::record::{AsyncKind, Record, ResultClass, StreamKind};
+use crate::record::{AsyncClass, AsyncKind, Record, ResultClass, StreamKind};
 use crate::value::Value;
 use nom::{
     IResult, Parser,
@@ -121,6 +121,55 @@ fn result_record(i: &str) -> IResult<&str, Record> {
     .parse(i)
 }
 
+fn parse_async_class(class: &str) -> AsyncClass {
+    match class {
+        // Exec (*)
+        "running" => AsyncClass::Running,
+        "stopped" => AsyncClass::Stopped,
+
+        // Status (+)
+        "download" => AsyncClass::Download,
+
+        // Notify (=) — thread groups
+        "thread-group-added" => AsyncClass::ThreadGroupAdded,
+        "thread-group-removed" => AsyncClass::ThreadGroupRemoved,
+        "thread-group-started" => AsyncClass::ThreadGroupStarted,
+        "thread-group-exited" => AsyncClass::ThreadGroupExited,
+
+        // Notify (=) — threads
+        "thread-created" => AsyncClass::ThreadCreated,
+        "thread-exited" => AsyncClass::ThreadExited,
+        "thread-selected" => AsyncClass::ThreadSelected,
+
+        // Notify (=) — shared libraries
+        "library-loaded" => AsyncClass::LibraryLoaded,
+        "library-unloaded" => AsyncClass::LibraryUnloaded,
+
+        // Notify (=) — breakpoints
+        "breakpoint-created" => AsyncClass::BreakpointCreated,
+        "breakpoint-modified" => AsyncClass::BreakpointModified,
+        "breakpoint-deleted" => AsyncClass::BreakpointDeleted,
+
+        // Notify (=) — tracepoints / tracing
+        "traceframe-changed" => AsyncClass::TraceframeChanged,
+        "tsv-created" => AsyncClass::TsvCreated,
+        "tsv-modified" => AsyncClass::TsvModified,
+        "tsv-deleted" => AsyncClass::TsvDeleted,
+
+        // Notify (=) — process recording
+        "record-started" => AsyncClass::RecordStarted,
+        "record-stopped" => AsyncClass::RecordStopped,
+
+        // Notify (=) — misc
+        "cmd-param-changed" => AsyncClass::CmdParamChanged,
+        "memory-changed" => AsyncClass::MemoryChanged,
+        "register-changed" => AsyncClass::RegisterChanged,
+
+        // Forward compatibility: preserve unrecognized classes verbatim
+        other => AsyncClass::Unknown(other.into()),
+    }
+}
+
 fn async_kind_and_class(i: &str) -> IResult<&str, (AsyncKind, &str)> {
     alt((
         map(preceded(char('*'), identifier), |c| (AsyncKind::Exec, c)),
@@ -136,7 +185,7 @@ fn async_record(i: &str) -> IResult<&str, Record> {
         |(token, (kind, class), results)| Record::Async {
             token,
             kind,
-            class: class.to_string(),
+            class: parse_async_class(class),
             results,
         },
     )
