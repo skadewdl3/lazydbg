@@ -1,4 +1,4 @@
-use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
+use crate::{command::MiCommand, value::EmptyReply};
 use serde::{Deserialize, Serialize};
 
 /// `-data-disassemble [-s start -e end | -f file -l line [-n lines]] -- mode`
@@ -234,7 +234,7 @@ pub struct DisplayInsert {
 }
 impl MiCommand for DisplayInsert {
     const OP: &'static str = "display-insert";
-    type Reply = crate::parsers::mi::Value;
+    type Reply = crate::Value;
 }
 
 /// `-display-list`
@@ -242,5 +242,5 @@ impl MiCommand for DisplayInsert {
 pub struct DisplayList {}
 impl MiCommand for DisplayList {
     const OP: &'static str = "display-list";
-    type Reply = crate::parsers::mi::Value;
+    type Reply = crate::Value;
 }

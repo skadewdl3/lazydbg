@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["lazydbg", "crates/reactatui", "crates/reactatui-macros", "crates/reactatui-widgets"]
+members = ["lazydbg", "crates/reactatui", "crates/reactatui-macros", "crates/reactatui-widgets", "crates/lazydbg-mi", "crates/lazydbg-dap"]
 
 [workspace.dependencies]
 ratatui = "0.29"

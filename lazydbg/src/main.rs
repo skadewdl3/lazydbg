@@ -4,13 +4,16 @@ use ratatui::crossterm::{
     execute,
 };
 use reactatui::prelude::*;
-use std::{io, time::Duration};
+use std::{io, sync::Arc, time::Duration};
 use ui::Home;
 
-use crate::interface::{DbgBackend, DbgSession, gdb::GdbBackend};
+use crate::{
+    interface::{DbgBackend, DbgSession, gdb::GdbBackend},
+    logger::{LogStore, LoggingLayer, init_logging},
+};
 
 mod interface;
-mod parsers;
+mod logger;
 mod ui;
 
 #[derive(Parser, Debug, Default, Copy, Clone)]
@@ -23,6 +26,11 @@ struct Args {
 
 fn init<'a>(args: Args) -> Result<(), &'a str> {
     // Initialize a debug backend based on if the user passes
+    // Initialize logging
+
+    let logs = init_logging();
+    use_global_with("logs", || logs.clone());
+
     // --gdb or --lldb. Default is --gdb.
     let backend: Box<dyn DbgBackend> = {
         if args.lldb && args.gdb {
@@ -38,6 +46,7 @@ fn init<'a>(args: Args) -> Result<(), &'a str> {
 
     // Store the debug session in the global state
     use_global_with("dbg-session", || DbgSession::new(backend));
+
     Ok(())
 }
 

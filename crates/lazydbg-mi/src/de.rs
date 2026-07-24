@@ -1,25 +1,12 @@
-use crate::parsers::mi::Value;
+use crate::Value;
+use crate::error::DeserializationError;
+use serde::de;
 use serde::de::{
-    self, IntoDeserializer,
+    IntoDeserializer,
     value::{MapDeserializer, SeqDeserializer},
 };
-use std::fmt;
 
-#[derive(Debug)]
-pub struct Error(pub String);
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-impl std::error::Error for Error {}
-impl de::Error for Error {
-    fn custom<T: fmt::Display>(msg: T) -> Self {
-        Error(msg.to_string())
-    }
-}
-
-impl<'de> IntoDeserializer<'de, Error> for Value {
+impl<'de> IntoDeserializer<'de, DeserializationError> for Value {
     type Deserializer = Value;
     fn into_deserializer(self) -> Value {
         self
@@ -28,10 +15,10 @@ impl<'de> IntoDeserializer<'de, Error> for Value {
 
 macro_rules! deserialize_num {
     ($($method:ident => $visit:ident: $ty:ty),* $(,)?) => {
-        $(fn $method<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+        $(fn $method<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, DeserializationError> {
             match self {
-                Value::Str(s) => visitor.$visit(s.parse::<$ty>().map_err(|e| Error(e.to_string()))?),
-                other => Err(Error(format!("expected numeric string, got {other:?}"))),
+                Value::Str(s) => visitor.$visit(s.parse::<$ty>().map_err(|e| DeserializationError::ParseInt)?),
+                other => Err(DeserializationError::ExpectedString(format!("{other:?}"))),
             }
         })*
     };
@@ -39,9 +26,12 @@ macro_rules! deserialize_num {
 
 /// MI encodes everything as strings/tuples/lists; this bridges that into any typed struct.
 impl<'de> de::Deserializer<'de> for Value {
-    type Error = Error;
+    type Error = DeserializationError;
 
-    fn deserialize_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_any<V: de::Visitor<'de>>(
+        self,
+        visitor: V,
+    ) -> Result<V::Value, DeserializationError> {
         match self {
             Value::Str(s) => visitor.visit_string(s),
             Value::List(items) => visitor.visit_seq(SeqDeserializer::new(items.into_iter())),
@@ -49,18 +39,24 @@ impl<'de> de::Deserializer<'de> for Value {
         }
     }
 
-    fn deserialize_option<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_option<V: de::Visitor<'de>>(
+        self,
+        visitor: V,
+    ) -> Result<V::Value, DeserializationError> {
         visitor.visit_some(self) // missing keys are handled by serde's Option default on structs
     }
 
-    fn deserialize_bool<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_bool<V: de::Visitor<'de>>(
+        self,
+        visitor: V,
+    ) -> Result<V::Value, DeserializationError> {
         match self {
             Value::Str(s) => match s.as_str() {
                 "y" | "true" | "1" => visitor.visit_bool(true),
                 "n" | "false" | "0" => visitor.visit_bool(false),
-                other => Err(Error(format!("expected bool-like string, got {other:?}"))),
+                other => Err(DeserializationError::ExpectedBool(format!("{other:?}"))),
             },
-            other => Err(Error(format!("expected string for bool, got {other:?}"))),
+            other => Err(DeserializationError::ExpectedString(format!("{other:?}"))),
         }
     }
 

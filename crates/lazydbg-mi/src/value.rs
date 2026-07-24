@@ -1,6 +1,8 @@
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
-use serde::Serialize;
+
+use crate::error::DeserializationError;
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum Value {
@@ -10,7 +12,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn parse_into<T: DeserializeOwned>(self) -> Result<T, crate::parsers::mi::de::Error> {
+    pub fn parse_into<T: DeserializeOwned>(self) -> Result<T, DeserializationError> {
         T::deserialize(self)
     }
 }
@@ -60,17 +62,9 @@ impl<'de> serde::de::Deserialize<'de> for Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct EmptyReply {}
 
-impl serde::Serialize for EmptyReply {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str("empty reply")
-    }
-}
 impl<'de> serde::de::Deserialize<'de> for EmptyReply {
     fn deserialize<D>(_d: D) -> Result<Self, D::Error>
     where

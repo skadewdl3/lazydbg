@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 
-use crate::parsers::mi::Value;
+use crate::{Value, error::DeserializationError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResultClass {
@@ -48,9 +48,7 @@ pub enum Record {
 
 impl Record {
     /// If this record carries a results map, deserialize it into `T`.
-    pub fn parse_results<T: DeserializeOwned>(
-        &self,
-    ) -> Option<Result<T, crate::parsers::mi::de::Error>> {
+    pub fn parse_results<T: DeserializeOwned>(&self) -> Option<Result<T, DeserializationError>> {
         match self {
             Record::Result { results, .. } | Record::Async { results, .. } => {
                 Some(T::deserialize(Value::Tuple(results.clone())))

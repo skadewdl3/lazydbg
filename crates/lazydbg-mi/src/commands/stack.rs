@@ -1,4 +1,4 @@
-use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
+use crate::{command::MiCommand, value::EmptyReply};
 use serde::{Deserialize, Serialize};
 
 /// `-stack-info-frame`
@@ -19,7 +19,7 @@ pub struct FrameInfo {
     pub func: Option<String>,
     pub file: Option<String>,
     pub line: Option<String>,
-    pub args: Option<Vec<crate::parsers::mi::Value>>,
+    pub args: Option<Vec<crate::Value>>,
 }
 
 /// `-stack-info-depth [max-depth]`
@@ -77,7 +77,7 @@ pub struct StackFrameArgs {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FrameArgsEntry {
     pub level: String,
-    pub args: Vec<crate::parsers::mi::Value>,
+    pub args: Vec<crate::Value>,
 }
 
 /// `-stack-list-frames [low-frame high-frame]`
@@ -122,7 +122,7 @@ impl MiCommand for StackListLocals {
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StackListLocalsReply {
-    pub locals: Vec<crate::parsers::mi::Value>,
+    pub locals: Vec<crate::Value>,
 }
 
 /// `-stack-select-frame framenum`

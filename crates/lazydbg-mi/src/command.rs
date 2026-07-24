@@ -1,5 +1,6 @@
-use crate::parsers::mi::Record;
-use crate::parsers::mi::ser::{ArgValue, CommandSerializer, Error};
+use crate::Record;
+use crate::error::{DeserializationError, SerializationError};
+use crate::ser::{ArgValue, CommandSerializer};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -12,7 +13,8 @@ pub trait MiCommand: Serialize {
     type Reply: DeserializeOwned + Serialize;
 
     /// Parse the results of a record into this command's Reply type.
-    fn parse_reply(record: &Record) -> Option<Result<Self::Reply, crate::parsers::mi::de::Error>> {
+    fn parse_reply(record: &Record) -> Option<Result<Self::Reply, DeserializationError>> {
+        // TODO: CommandError:Deserialize
         record.parse_results::<Self::Reply>()
     }
 }
@@ -23,7 +25,7 @@ pub trait MiCommand: Serialize {
 /// - `bool` -> bare `-flag` if true, omitted if false
 /// - `Option<T>` -> omitted if None
 /// - field named exactly `positional: String | Option<String> | Vec<String>` -> appended unlabeled, in order, at the end
-pub fn build_line<C: MiCommand>(cmd: &C, token: u64) -> Result<String, Error> {
+pub fn build_line<C: MiCommand>(cmd: &C, token: u64) -> Result<String, SerializationError> {
     let fields = cmd.serialize(CommandSerializer)?;
     let mut out = format!("{token}-{}", C::OP);
     let mut positional: Vec<String> = Vec::new();

@@ -1,18 +1,24 @@
+use ratatui::backend::Backend;
 use reactatui::hooks::use_global;
+
+use lazydbg_mi::{
+    MiCommand, Record, build_line,
+    commands::{FileExecFile, FileSymbolFile},
+    parse_line,
+};
+use thiserror::Error;
+use tracing::{error, info};
 
 use crate::{
     interface::{DbgBackend, backend::DbgBackendStatus},
-    parsers::mi::{
-        MiCommand, Record, build_line,
-        commands::{FileExecFile, FileSymbolFile},
-        parse_line,
-    },
+    logger::SharedLogStore,
 };
 use std::{
     io::{Read, Write},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
+use std::io;
 use std::io::{BufRead, BufReader};
 
 pub struct GdbBackend {
@@ -21,6 +27,18 @@ pub struct GdbBackend {
     stdout: BufReader<ChildStdout>,
     status: DbgBackendStatus,
     token: u64,
+}
+
+#[derive(Debug, Error)]
+pub enum BackendError {
+    #[error("deserialization")]
+    Deserialize(#[from] lazydbg_mi::error::DeserializationError),
+    #[error("serialization")]
+    Serialize(#[from] lazydbg_mi::error::SerializationError),
+    #[error("parse")]
+    Parse(#[from] lazydbg_mi::error::ParseError),
+    #[error("io")]
+    Io(#[from] std::io::Error),
 }
 
 impl GdbBackend {
@@ -50,10 +68,10 @@ impl GdbBackend {
         tk
     }
 
-    pub fn send<C: MiCommand>(&mut self, cmd: C) -> std::io::Result<C::Reply> {
+    pub fn send<C: MiCommand>(&mut self, cmd: C) -> Result<C::Reply, BackendError> {
         let token = self.use_token();
-        let cmd_str = build_line(&cmd, token)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        let cmd_str =
+            build_line(&cmd, token).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
         self.stdin.write_all(cmd_str.as_bytes())?;
         self.stdin.flush()?;
 
@@ -63,23 +81,17 @@ impl GdbBackend {
             line.clear();
             let bytes_read = self.stdout.read_line(&mut line)?;
             if bytes_read == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "GDB closed stdout",
-                ));
+                return Err(
+                    io::Error::new(std::io::ErrorKind::UnexpectedEof, "GDB closed stdout").into(),
+                );
             }
-            if let Some(record) = parse_line(&line) {
-                if let Record::Result { token: Some(t), .. } = record {
-                    if t == token {
-                        let reply = C::parse_reply(&record)
-                            .unwrap_or_else(|| {
-                                Err(crate::parsers::mi::de::Error("No results".into()))
-                            })
-                            .map_err(|e| {
-                                std::io::Error::new(std::io::ErrorKind::InvalidData, e.0)
-                            })?;
-                        return Ok(reply);
-                    }
+            let record = parse_line(&line)?;
+            if let Record::Result { token: Some(t), .. } = record {
+                if t == token {
+                    let reply = C::parse_reply(&record)
+                        .expect("reply doesn't contain a map")
+                        .map_err(|e| e.into());
+                    return reply;
                 }
             }
         }
@@ -106,15 +118,14 @@ impl DbgBackend for GdbBackend {
         let res = self.send(FileExecFile {
             positional: Some(path),
         });
-        let logs = use_global::<Vec<String>>("logs");
         match res {
             Ok(reply) => {
                 if let Ok(json) = serde_json::to_string(&reply) {
-                    logs.with_mut(|l| l.push(json));
+                    info!("{}", json);
                 }
             }
             Err(err) => {
-                logs.with_mut(|l| l.push(err.to_string()));
+                error!("{}", err.to_string())
             }
         };
     }
@@ -124,15 +135,14 @@ impl DbgBackend for GdbBackend {
             positional: Some(path),
         });
 
-        let logs = use_global::<Vec<String>>("logs");
         match res {
             Ok(reply) => {
                 if let Ok(json) = serde_json::to_string(&reply) {
-                    logs.with_mut(|l| l.push(json));
+                    info!("{}", json);
                 }
             }
             Err(err) => {
-                logs.with_mut(|l| l.push(err.to_string()));
+                error!("{}", err.to_string())
             }
         };
     }

@@ -1,5 +1,5 @@
-use crate::parsers::mi::record::{AsyncKind, Record, ResultClass, StreamKind};
-use crate::parsers::mi::value::Value;
+use crate::record::{AsyncKind, Record, ResultClass, StreamKind};
+use crate::value::Value;
 use nom::{
     IResult, Parser,
     branch::alt,

@@ -1,4 +1,4 @@
-use crate::parsers::mi::{command::MiCommand, value::EmptyReply};
+use crate::{command::MiCommand, value::EmptyReply};
 use serde::Serialize;
 
 /// `-file-exec-and-symbols [file]`
@@ -26,7 +26,7 @@ impl MiCommand for FileExecFile {
 pub struct FileListExecSections {}
 impl MiCommand for FileListExecSections {
     const OP: &'static str = "file-list-exec-sections";
-    type Reply = crate::parsers::mi::Value;
+    type Reply = crate::Value;
 }
 
 /// `-file-list-exec-source-files`
@@ -34,7 +34,7 @@ impl MiCommand for FileListExecSections {
 pub struct FileListExecSourceFiles {}
 impl MiCommand for FileListExecSourceFiles {
     const OP: &'static str = "file-list-exec-source-files";
-    type Reply = crate::parsers::mi::Value;
+    type Reply = crate::Value;
 }
 
 /// `-file-list-shared-libraries`
@@ -42,7 +42,7 @@ impl MiCommand for FileListExecSourceFiles {
 pub struct FileListSharedLibraries {}
 impl MiCommand for FileListSharedLibraries {
     const OP: &'static str = "file-list-shared-libraries";
-    type Reply = crate::parsers::mi::Value;
+    type Reply = crate::Value;
 }
 
 /// `-file-list-symbol-files`
@@ -50,7 +50,7 @@ impl MiCommand for FileListSharedLibraries {
 pub struct FileListSymbolFiles {}
 impl MiCommand for FileListSymbolFiles {
     const OP: &'static str = "file-list-symbol-files";
-    type Reply = crate::parsers::mi::Value;
+    type Reply = crate::Value;
 }
 
 /// `-file-symbol-file [file]`

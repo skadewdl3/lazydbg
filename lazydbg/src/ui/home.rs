@@ -30,7 +30,6 @@ pub fn Home<'a>() -> TuiNode<'a> {
     let binary_path_handler = move |bin: &String| {
         open.set(false);
         session.with_mut(|s| {
-            logs.with_mut(move |l| l.push("Hi mom".into()));
             s.open_file(bin.clone());
         });
         Propagation::Stop

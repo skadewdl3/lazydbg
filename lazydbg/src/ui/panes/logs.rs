@@ -2,13 +2,15 @@ use ratatui::crossterm::event::KeyCode;
 use reactatui::{keybindings, prelude::*};
 use reactatui_widgets::*;
 
+use crate::logger::SharedLogStore;
+
 /// A scrollable paragraph widget displaying a log of events.
 /// Handles arrow keys for manual panning and mouse wheel events for scrolling.
 #[component]
 pub fn Logs<'a>(is_active: bool) -> TuiNode<'a> {
     // scroll offset: (y, x)
     let scroll_offset: State<(u16, u16)> = use_global_or_default("scroll-offset");
-    let logs: State<Vec<String>> = use_global_or_default("logs");
+    let logs: State<SharedLogStore> = use_global("logs");
 
     let scroll_x = move |delta: i16| {
         scroll_offset.with_mut(|o| apply_scroll_delta(&mut o.1, delta));
@@ -30,7 +32,7 @@ pub fn Logs<'a>(is_active: bool) -> TuiNode<'a> {
     let (scroll_y_offset, scroll_x_offset) = scroll_offset.get();
 
     // Provide lots of dummy lines to test scrolling
-    let lines_str = logs.get().join("\n");
+    let lines_str = logs.get().snapshot().join("'\n");
 
     tui! {
         <Block::default borders={Borders::ALL} title={"Logs"}>
