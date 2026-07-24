@@ -11,7 +11,7 @@ use crate::interface::{DbgBackend, backend::DbgBackendStatus};
 use std::{
     collections::HashMap,
     io::Write,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
 };
@@ -19,16 +19,17 @@ use std::{
 use std::io;
 use std::io::{BufRead, BufReader};
 
-type PendingMap = Arc<Mutex<HashMap<u64, mpsc::Sender<Record>>>>;
+type PendingMap = HashMap<u64, mpsc::Sender<Record>>;
 type AsyncListener = Box<dyn Fn(&AsyncClass, &HashMap<String, Value>) + Send + 'static>;
 
+#[allow(unused)]
 pub struct GdbBackend {
     pub process: Child,
     stdin: ChildStdin,
     reader: JoinHandle<()>,
     status: DbgBackendStatus,
     token: u64,
-    pending: Arc<Mutex<HashMap<u64, mpsc::Sender<Record>>>>,
+    pending: Arc<Mutex<PendingMap>>,
     async_listeners: Arc<Mutex<Vec<AsyncListener>>>,
 }
 
@@ -159,6 +160,7 @@ impl GdbBackend {
     /// `wanted` comes in. `AsyncClass::Unknown` compares by inner string,
     /// so registering for `AsyncClass::Unknown("foo".into())` only fires
     /// for that exact unrecognized class name.
+    #[allow(unused)]
     pub fn on_async<F>(&mut self, wanted: AsyncClass, callback: F)
     where
         F: Fn(&HashMap<String, Value>) + Send + 'static,

@@ -1,6 +1,5 @@
 use crate::interface::DbgSession;
 use crate::ui::Keybinds;
-use crate::ui::home::InputUse::Breakpoint;
 use crate::ui::panes::Pane;
 use crate::ui::panes::logs::Logs;
 use crate::ui::panes::{disassembly::Disassembly, frame::Frame, status::Status};
@@ -44,7 +43,7 @@ pub fn Home<'a>() -> TuiNode<'a> {
 
     let submit_handler = move |string: &Option<String>| {
         open.set(false);
-        if let None = string {
+        if string.is_none() {
             return Propagation::Stop;
         }
         let string = string.clone().unwrap();
