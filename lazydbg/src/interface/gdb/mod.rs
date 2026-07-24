@@ -1,11 +1,11 @@
 use lazydbg_mi::{
     MiCommand, Record, Value, build_line,
-    commands::{BreakInsert, BreakList, ExecRun, FileExecFile, FileSymbolFile},
+    commands::{BreakInsert, BreakList, ExecRun, FileExecFile, FileSymbolFile, StackListFrames},
     parse_line,
     record::AsyncClass,
 };
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{error, info, trace};
 
 use crate::interface::{DbgBackend, backend::DbgBackendStatus};
 use std::{
@@ -97,7 +97,7 @@ impl GdbBackend {
                                 }
                             }
                             Record::Async { class, results, .. } => {
-                                info!("{:?}: {:#?}", class, results);
+                                trace!("{:?}: {:#?}", class, results);
                                 let listeners = listeners_reader.lock().unwrap();
                                 for listener in listeners.iter() {
                                     listener(class, results);
@@ -128,6 +128,7 @@ impl GdbBackend {
         }
     }
 
+    // TODO: add listeners
     fn register_async_listeners(&mut self) {}
 
     pub fn use_token(&mut self) -> u64 {
@@ -143,6 +144,7 @@ impl GdbBackend {
         let (tx, rx) = mpsc::channel();
         self.pending.lock().unwrap().insert(token, tx);
 
+        tracing::debug!("Sending mi command: {:#?}", cmd_str);
         self.stdin.write_all(cmd_str.as_bytes())?;
         self.stdin.flush()?;
 
@@ -206,9 +208,7 @@ impl DbgBackend for GdbBackend {
         });
         match res {
             Ok(reply) => {
-                if let Ok(json) = serde_json::to_string(&reply) {
-                    info!("{}", json);
-                }
+                info!("{:#?}", reply);
             }
             Err(err) => {
                 error!("{}", err.to_string())
@@ -223,9 +223,7 @@ impl DbgBackend for GdbBackend {
 
         match res {
             Ok(reply) => {
-                if let Ok(json) = serde_json::to_string(&reply) {
-                    info!("{}", json);
-                }
+                info!("{:#?}", reply);
             }
             Err(err) => {
                 error!("{}", err.to_string())
@@ -238,9 +236,7 @@ impl DbgBackend for GdbBackend {
 
         match res {
             Ok(reply) => {
-                if let Ok(json) = serde_json::to_string(&reply) {
-                    info!("{}", json);
-                }
+                info!("{:#?}", reply);
             }
             Err(err) => {
                 error!("{}", err.to_string())
@@ -256,9 +252,7 @@ impl DbgBackend for GdbBackend {
 
         match res {
             Ok(reply) => {
-                if let Ok(json) = serde_json::to_string(&reply) {
-                    info!("{}", json);
-                }
+                info!("{:#?}", reply);
             }
             Err(err) => {
                 error!("{}", err.to_string())
@@ -271,9 +265,20 @@ impl DbgBackend for GdbBackend {
 
         match res {
             Ok(reply) => {
-                if let Ok(json) = serde_json::to_string(&reply) {
-                    info!("{}", json);
-                }
+                info!("{:#?}", reply);
+            }
+            Err(err) => {
+                error!("{}", err.to_string())
+            }
+        };
+    }
+
+    fn frames(&mut self) {
+        let res = self.send(StackListFrames::default());
+
+        match res {
+            Ok(reply) => {
+                info!("{:#?}", reply);
             }
             Err(err) => {
                 error!("{}", err.to_string())

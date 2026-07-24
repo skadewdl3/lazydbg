@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use tracing::field::{Field, Visit};
+use tracing::level_filters::LevelFilter;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::prelude::*;
@@ -110,7 +111,7 @@ where
 pub fn init_logging() -> SharedLogStore {
     let store = global_log_store();
 
-    let ui_layer = LoggingLayer::new(store.clone());
+    let ui_layer = LoggingLayer::new(store.clone()).with_filter(LevelFilter::DEBUG);
 
     tracing_subscriber::registry().with(ui_layer).init();
 

@@ -12,14 +12,50 @@ impl MiCommand for StackInfoFrame {
 pub struct StackInfoFrameReply {
     pub frame: FrameInfo,
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct FrameFields {
+    level: Option<String>,
+    addr: Option<String>,
+    func: Option<String>,
+    file: Option<String>,
+    line: Option<String>,
+    args: Option<Vec<crate::Value>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct FrameInfo {
-    pub level: Option<String>,
-    pub addr: Option<String>,
-    pub func: Option<String>,
-    pub file: Option<String>,
-    pub line: Option<String>,
-    pub args: Option<Vec<crate::Value>>,
+    level: Option<String>,
+    addr: Option<String>,
+    func: Option<String>,
+    file: Option<String>,
+    line: Option<String>,
+    args: Option<Vec<crate::Value>>,
+}
+
+impl From<FrameFields> for FrameInfo {
+    fn from(f: FrameFields) -> Self {
+        FrameInfo {
+            level: f.level,
+            addr: f.addr,
+            func: f.func,
+            file: f.file,
+            line: f.line,
+            args: f.args,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for FrameInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Wrapper {
+            frame: FrameFields,
+        }
+        Ok(Wrapper::deserialize(deserializer)?.frame.into())
+    }
 }
 
 /// `-stack-info-depth [max-depth]`

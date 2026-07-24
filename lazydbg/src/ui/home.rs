@@ -38,7 +38,8 @@ pub fn Home<'a>() -> TuiNode<'a> {
        "b" => move || open_input(InputUse::Breakpoint),
        "esc" => move || open.set(false),
        "l" => move || session.with_mut(|s| s.list_breakpoints()),
-       "r" => move || session.with_mut(|s| s.run())
+       "r" => move || session.with_mut(|s| s.run()),
+       "t" => move || session.with_mut(|s| s.frames())
     });
 
     let submit_handler = move |string: &Option<String>| {

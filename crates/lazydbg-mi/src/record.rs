@@ -101,6 +101,7 @@ impl Record {
     pub fn parse_results<T: DeserializeOwned>(&self) -> Option<Result<T, DeserializationError>> {
         match self {
             Record::Result { results, .. } | Record::Async { results, .. } => {
+                tracing::debug!("Deserialized record: {:#?}", results);
                 Some(T::deserialize(Value::Tuple(results.clone())))
             }
             _ => None,

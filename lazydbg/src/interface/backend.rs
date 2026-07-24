@@ -14,4 +14,8 @@ pub trait DbgBackend {
     fn breakpoints(&mut self);
     fn set_breakpoint(&mut self, bp: String);
     fn run(&mut self);
+    fn frames(&mut self);
 }
+
+// maybe have traits for DbgFrame (one frame dyn object), DbgBreakpoints (breakpoint handler),
+// DbgRegisters

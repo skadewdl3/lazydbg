@@ -35,4 +35,8 @@ impl DbgSession {
     pub fn run(&mut self) {
         self.backend.run();
     }
+
+    pub fn frames(&mut self) {
+        self.backend.frames();
+    }
 }
