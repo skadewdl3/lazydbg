@@ -46,23 +46,24 @@ impl Parser {
         }
 
         if let Some(TokenTree::Group(group)) = self.peek().cloned()
-            && group.delimiter() == Delimiter::Brace {
-                let mut inner = Parser::new(group.stream());
-                if inner.peek_ident("for") {
-                    self.pos += 1;
-                    return inner.parse_for().map(Node::For);
-                }
-                if inner.peek_ident("if") {
-                    self.pos += 1;
-                    return inner.parse_if().map(Node::If);
-                }
-                if inner.starts_element() {
-                    self.pos += 1;
-                    return inner.parse_element_or_fragment();
-                }
+            && group.delimiter() == Delimiter::Brace
+        {
+            let mut inner = Parser::new(group.stream());
+            if inner.peek_ident("for") {
                 self.pos += 1;
-                return Ok(Node::Expr(group.stream()));
+                return inner.parse_for().map(Node::For);
             }
+            if inner.peek_ident("if") {
+                self.pos += 1;
+                return inner.parse_if().map(Node::If);
+            }
+            if inner.starts_element() {
+                self.pos += 1;
+                return inner.parse_element_or_fragment();
+            }
+            self.pos += 1;
+            return Ok(Node::Expr(group.stream()));
+        }
 
         Ok(Node::Expr(self.collect_expression_child()))
     }
@@ -131,10 +132,11 @@ impl Parser {
 
         // Parse optional positional args: `(arg1, arg2)` immediately after the tag/constructor name.
         if let Some(TokenTree::Group(group)) = self.peek().cloned()
-            && group.delimiter() == Delimiter::Parenthesis {
-                self.pos += 1;
-                constructor_args = Some(group.stream());
-            }
+            && group.delimiter() == Delimiter::Parenthesis
+        {
+            self.pos += 1;
+            constructor_args = Some(group.stream());
+        }
 
         Ok(Tag {
             path,
@@ -152,30 +154,30 @@ impl Parser {
         let name = self.expect_ident()?;
 
         // Detect `on:click` / `on:mousein` / `on:mouseout` / `on:scrollx` / `on:scrolly` — single colon (not `::`)
-        if name == "on"
-            && matches!(self.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ':') {
-                // Make sure the NEXT token after `:` is NOT another `:` (that would be `::`)
-                if !matches!(self.peek_n(1), Some(TokenTree::Punct(p)) if p.as_char() == ':') {
-                    self.pos += 1; // consume `:`
-                    let kind_ident = self.expect_ident()?;
-                    let kind = kind_ident.to_string();
-                    if !self.consume_punct('=') {
-                        return Err(self
-                            .error(format!("on:{kind} requires a value: on:{kind}={{handler}}")));
-                    }
-                    let Some(TokenTree::Group(group)) = self.peek().cloned() else {
-                        return Err(self.error("event handler must be wrapped in braces"));
-                    };
-                    if group.delimiter() != Delimiter::Brace {
-                        return Err(self.error("event handler must be wrapped in braces"));
-                    }
-                    self.pos += 1;
-                    return Ok(Prop::Event {
-                        kind,
-                        handler: group.stream(),
-                    });
+        if name == "on" && matches!(self.peek(), Some(TokenTree::Punct(p)) if p.as_char() == ':') {
+            // Make sure the NEXT token after `:` is NOT another `:` (that would be `::`)
+            if !matches!(self.peek_n(1), Some(TokenTree::Punct(p)) if p.as_char() == ':') {
+                self.pos += 1; // consume `:`
+                let kind_ident = self.expect_ident()?;
+                let kind = kind_ident.to_string();
+                if !self.consume_punct('=') {
+                    return Err(
+                        self.error(format!("on:{kind} requires a value: on:{kind}={{handler}}"))
+                    );
                 }
+                let Some(TokenTree::Group(group)) = self.peek().cloned() else {
+                    return Err(self.error("event handler must be wrapped in braces"));
+                };
+                if group.delimiter() != Delimiter::Brace {
+                    return Err(self.error("event handler must be wrapped in braces"));
+                }
+                self.pos += 1;
+                return Ok(Prop::Event {
+                    kind,
+                    handler: group.stream(),
+                });
             }
+        }
 
         if !self.consume_punct('=') {
             return Ok(Prop::Boolean(name));
@@ -299,9 +301,10 @@ impl Parser {
         let actual = self.parse_tag()?;
         self.expect_punct('>')?;
         if let Some(expected) = close_tag
-            && !expected.same_name(&actual) {
-                return Err(self.error("closing tag does not match opening tag"));
-            }
+            && !expected.same_name(&actual)
+        {
+            return Err(self.error("closing tag does not match opening tag"));
+        }
         Ok(())
     }
 

@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use crate::interface::gdb::BackendError;
 
 #[derive(Copy, Clone, Eq, PartialEq)]

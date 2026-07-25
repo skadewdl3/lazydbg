@@ -64,6 +64,7 @@ fn gen_element(element: &Element) -> TokenStream2 {
     match element.tag.simple_name().as_deref() {
         Some("Component") => gen_component_is(element),
         Some("Flex") => gen_flex(element),
+        Some("Grid") => gen_grid(element),
         _ => gen_custom_component(element),
     }
 }
@@ -77,28 +78,13 @@ fn gen_component_is(element: &Element) -> TokenStream2 {
 }
 
 fn gen_flex(element: &Element) -> TokenStream2 {
-    let items = element.children.iter().map(|child| match child {
-        Node::Element(element) => {
-            let node = gen_element_without_flex(element);
-            let mut item = quote! { ::reactatui::FlexItemNode::new(#node) };
-            if has_boolean_prop(&element.props, "flex_ignore") {
-                item = quote! { #item.flex_ignore() };
-            }
-            if let Some(min) = named_prop(&element.props, "min") {
-                item = quote! { #item.min(#min) };
-            }
-            if let Some(max) = named_prop(&element.props, "max") {
-                item = quote! { #item.max(#max) };
-            }
-            item
-        }
-        child => {
-            let node = gen_node(child);
-            quote! { ::reactatui::FlexItemNode::new(#node) }
-        }
-    });
+    let items_ident = format_ident!("__reactatui_flex_items");
+    let item_pushes = element
+        .children
+        .iter()
+        .map(|child| gen_flex_item_push(child, &items_ident));
 
-    let mut flex = quote! { ::reactatui::FlexNode::new(vec![#(#items),*]) };
+    let mut flex = quote! { ::reactatui::FlexNode::new(#items_ident) };
     for prop in &element.props {
         match prop {
             Prop::Named { name, value } if name == "direction" => {
@@ -117,19 +103,213 @@ fn gen_flex(element: &Element) -> TokenStream2 {
             Prop::Named { name, value } if name == "layout" => {
                 flex = quote! { #flex.layout(#value) };
             }
+            Prop::Named { name, value } if name == "style" => {
+                flex = quote! { #flex.style(#value) };
+            }
             _ => {}
         }
     }
 
-    quote! { ::reactatui::TuiNode::from(#flex) }
+    quote! {{
+        let mut #items_ident = Vec::new();
+        #(#item_pushes)*
+        ::reactatui::TuiNode::from(#flex)
+    }}
+}
+
+fn gen_grid(element: &Element) -> TokenStream2 {
+    let items_ident = format_ident!("__reactatui_grid_items");
+    let item_pushes = element
+        .children
+        .iter()
+        .map(|child| gen_grid_item_push(child, &items_ident));
+
+    let mut grid = quote! { ::reactatui::GridNode::new(#items_ident) };
+    for prop in &element.props {
+        match prop {
+            Prop::Named { name, value } if name == "columns" => {
+                grid = quote! { #grid.columns(#value) }
+            }
+            Prop::Named { name, value } if name == "rows" => grid = quote! { #grid.rows(#value) },
+            Prop::Named { name, value } if name == "gap" => grid = quote! { #grid.gap(#value) },
+            Prop::Named { name, value } if name == "gap_x" => grid = quote! { #grid.gap_x(#value) },
+            Prop::Named { name, value } if name == "gap_y" => grid = quote! { #grid.gap_y(#value) },
+            Prop::Named { name, value } if name == "padding" => {
+                grid = quote! { #grid.padding(#value) }
+            }
+            Prop::Named { name, value } if name == "style" => grid = quote! { #grid.style(#value) },
+            Prop::Spread(value) => {
+                let _ = value;
+                grid = quote! { compile_error!("spread props are not supported by reactatui v0.3 yet") };
+            }
+            _ => {}
+        }
+    }
+
+    quote! {{
+        let mut #items_ident = Vec::new();
+        #(#item_pushes)*
+        ::reactatui::TuiNode::from(#grid)
+    }}
+}
+
+fn gen_flex_item(element: &Element) -> TokenStream2 {
+    let node = gen_element_without_flex(element);
+    let mut item = quote! { ::reactatui::FlexItemNode::new(#node) };
+    if has_boolean_prop(&element.props, "flex_ignore") {
+        item = quote! { #item.flex_ignore() };
+    }
+    if let Some(style) = named_prop(&element.props, "style") {
+        item = quote! {
+            #item.style(::core::convert::Into::<::reactatui::layout::Style>::into(#style))
+        };
+    }
+    item
+}
+
+fn gen_flex_item_push(node: &Node, items_ident: &proc_macro2::Ident) -> TokenStream2 {
+    match node {
+        Node::Element(element) => {
+            let item = gen_flex_item(element);
+            quote! { #items_ident.push(#item); }
+        }
+        Node::Fragment(children) => {
+            let pushes = children
+                .iter()
+                .map(|child| gen_flex_item_push(child, items_ident));
+            quote! { #(#pushes)* }
+        }
+        Node::For(node) => {
+            let head = &node.head;
+            let pushes = node
+                .body
+                .iter()
+                .map(|child| gen_flex_item_push(child, items_ident));
+            quote! {
+                for #head {
+                    #(#pushes)*
+                }
+            }
+        }
+        Node::If(node) => gen_flex_if_push(node, items_ident),
+        child => {
+            let node = gen_node(child);
+            quote! { #items_ident.push(::reactatui::FlexItemNode::new(#node)); }
+        }
+    }
+}
+
+fn gen_flex_if_push(node: &IfNode, items_ident: &proc_macro2::Ident) -> TokenStream2 {
+    let condition = &node.condition;
+    let then_pushes = node
+        .then_branch
+        .iter()
+        .map(|child| gen_flex_item_push(child, items_ident));
+    let else_pushes = match &node.else_branch {
+        Some(ElseBranch::If(node)) => gen_flex_if_push(node, items_ident),
+        Some(ElseBranch::Nodes(nodes)) => {
+            let pushes = nodes
+                .iter()
+                .map(|child| gen_flex_item_push(child, items_ident));
+            quote! { #(#pushes)* }
+        }
+        None => quote! {},
+    };
+
+    quote! {
+        if #condition {
+            #(#then_pushes)*
+        } else {
+            #else_pushes
+        }
+    }
+}
+
+fn gen_grid_item(element: &Element) -> TokenStream2 {
+    let node = gen_element_without_grid(element);
+    let mut item = quote! { ::reactatui::GridItemNode::new(#node) };
+    if let Some(style) = named_prop(&element.props, "style") {
+        item = quote! {
+            #item.style(::core::convert::Into::<::reactatui::layout::Style>::into(#style))
+        };
+    }
+    item
+}
+
+fn gen_grid_item_push(node: &Node, items_ident: &proc_macro2::Ident) -> TokenStream2 {
+    match node {
+        Node::Element(element) => {
+            let item = gen_grid_item(element);
+            quote! { #items_ident.push(#item); }
+        }
+        Node::Fragment(children) => {
+            let pushes = children
+                .iter()
+                .map(|child| gen_grid_item_push(child, items_ident));
+            quote! { #(#pushes)* }
+        }
+        Node::For(node) => {
+            let head = &node.head;
+            let pushes = node
+                .body
+                .iter()
+                .map(|child| gen_grid_item_push(child, items_ident));
+            quote! {
+                for #head {
+                    #(#pushes)*
+                }
+            }
+        }
+        Node::If(node) => gen_grid_if_push(node, items_ident),
+        child => {
+            let node = gen_node(child);
+            quote! { #items_ident.push(::reactatui::GridItemNode::new(#node)); }
+        }
+    }
+}
+
+fn gen_grid_if_push(node: &IfNode, items_ident: &proc_macro2::Ident) -> TokenStream2 {
+    let condition = &node.condition;
+    let then_pushes = node
+        .then_branch
+        .iter()
+        .map(|child| gen_grid_item_push(child, items_ident));
+    let else_pushes = match &node.else_branch {
+        Some(ElseBranch::If(node)) => gen_grid_if_push(node, items_ident),
+        Some(ElseBranch::Nodes(nodes)) => {
+            let pushes = nodes
+                .iter()
+                .map(|child| gen_grid_item_push(child, items_ident));
+            quote! { #(#pushes)* }
+        }
+        None => quote! {},
+    };
+
+    quote! {
+        if #condition {
+            #(#then_pushes)*
+        } else {
+            #else_pushes
+        }
+    }
+}
+
+fn gen_element_without_grid(element: &Element) -> TokenStream2 {
+    let mut clone = element.clone();
+    clone.props.retain(|prop| match prop {
+        Prop::Named { name, .. } | Prop::Boolean(name) => name != "style",
+        Prop::Spread(_) | Prop::Event { .. } => true,
+    });
+    gen_element(&clone)
 }
 
 fn gen_element_without_flex(element: &Element) -> TokenStream2 {
     let mut clone = element.clone();
     clone.props.retain(|prop| match prop {
-        Prop::Named { name, .. } | Prop::Boolean(name) => {
-            !matches!(name.to_string().as_str(), "flex_ignore" | "min" | "max")
-        }
+        Prop::Named { name, .. } | Prop::Boolean(name) => !matches!(
+            name.to_string().as_str(),
+            "flex_ignore" | "min" | "max" | "style"
+        ),
         Prop::Spread(_) | Prop::Event { .. } => true,
     });
     gen_element(&clone)

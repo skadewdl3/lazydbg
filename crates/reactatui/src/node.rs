@@ -4,20 +4,19 @@ use ratatui::{
     widgets::{Block, StatefulWidget, Widget},
 };
 
-use crate::flex::FlexNode;
 use crate::hooks;
+use crate::layout::{FlexNode, GridNode};
 
 /// Universal render node produced by the `tui!` macro.
 pub enum TuiNode<'a> {
     Widget(Box<dyn FnOnce(Rect, &mut Buffer) + 'a>),
     Fragment(Vec<TuiNode<'a>>),
     Flex(FlexNode<'a>),
+    Grid(GridNode<'a>),
     Empty,
 }
 
 /// Something that can hand out a `&mut S` for exactly one render call.
-/// Implemented for a plain mutable borrow and for `hooks::State<S>`, so
-/// `TuiNode::from_stateful_widget` works transparently with either.
 pub trait StateHandle<'a, S> {
     fn with_state<R>(self, f: impl FnOnce(&mut S) -> R) -> R;
 }
@@ -30,8 +29,6 @@ impl<'a, S> StateHandle<'a, S> for &'a mut S {
 
 impl<'a, S: 'static> StateHandle<'a, S> for hooks::State<S> {
     fn with_state<R>(self, f: impl FnOnce(&mut S) -> R) -> R {
-        // Calls the inherent `State::with_mut`, not this trait method —
-        // inherent methods always win over trait methods in resolution.
         self.with_mut(f)
     }
 }
@@ -82,12 +79,19 @@ impl<'a> From<FlexNode<'a>> for TuiNode<'a> {
     }
 }
 
+impl<'a> From<GridNode<'a>> for TuiNode<'a> {
+    fn from(value: GridNode<'a>) -> Self {
+        Self::Grid(value)
+    }
+}
+
 impl<'a> Widget for TuiNode<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match self {
             TuiNode::Widget(render) => render(area, buf),
             TuiNode::Fragment(children) => render_fragment(children, area, buf),
             TuiNode::Flex(flex) => flex.render(area, buf),
+            TuiNode::Grid(grid) => grid.render(area, buf),
             TuiNode::Empty => {}
         }
     }

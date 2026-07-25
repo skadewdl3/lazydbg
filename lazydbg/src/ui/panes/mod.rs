@@ -1,4 +1,3 @@
-
 use num_enum::TryFromPrimitive;
 use reactatui::hooks::{State, use_global_with};
 use strum::EnumCount;
@@ -6,7 +5,6 @@ use strum::EnumCount;
 pub mod disassembly;
 pub mod frame;
 pub mod logs;
-pub mod stack;
 pub mod status;
 
 #[derive(Copy, Clone, EnumCount, TryFromPrimitive, Eq, PartialEq)]

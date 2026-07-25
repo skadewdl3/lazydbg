@@ -429,6 +429,7 @@ dependencies = [
  "num_enum",
  "ratatui",
  "reactatui",
+ "reactatui-macros",
  "reactatui-widgets",
  "remove",
  "serde",

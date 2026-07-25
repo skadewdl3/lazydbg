@@ -134,8 +134,8 @@ impl<'a> InputBase<'a> {
         self
     }
 
-    pub fn style(mut self, style: Style) -> Self {
-        self.style = style;
+    pub fn style(mut self, style: impl Into<Style>) -> Self {
+        self.style = style.into();
         self
     }
 

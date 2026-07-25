@@ -1,5 +1,4 @@
 use crate::interface::DbgSession;
-use crate::interface::backend::DbgFrame;
 use crate::ui::Keybinds;
 use crate::ui::panes::Pane;
 use crate::ui::panes::logs::Logs;
@@ -40,7 +39,7 @@ pub fn Home<'a>() -> TuiNode<'a> {
        "esc" => move || open.set(false),
        "l" => move || session.with_mut(|s| s.list_breakpoints()),
        "r" => move || session.with_mut(|s| s.run()),
-       "t" => move || session.with_mut(|s| s.frames())
+       "t" => move || session.with_mut(|s| s.frames()),
     });
 
     let submit_handler = move |string: &Option<String>| {
@@ -66,17 +65,16 @@ pub fn Home<'a>() -> TuiNode<'a> {
     };
 
     tui! {
-        <Flex direction={Direction::Vertical} layout={"1fr, 1"}>
-            <Flex direction={Direction::Horizontal} gap={1}>
-                <Flex direction={Direction::Vertical} layout={"3, 1fr, 1fr"}>
-                    <Status />
+        <Flex direction={Direction::Vertical}>
+            <Flex direction={Direction::Horizontal} style={style!{ gap: 1 }}>
+                <Flex direction={Direction::Vertical} style={style!{ gap: 1 }}>
+                    <Status style={style!{ flex-basis: 3 }} />
                     <Frame />
                     <Disassembly />
                 </Flex>
-                // <Stack />
                 <Logs is_active={false} />
             </Flex>
-            <Keybinds />
+            <Keybinds style={style!{ flex-basis: 1 }} />
             <Dialog::new flex_ignore visible={open.get()} width={"50%"}>
             <Input("Enter binary", open.get(), true) on:submit={submit_handler} />
             </Dialog>

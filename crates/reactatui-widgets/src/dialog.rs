@@ -4,6 +4,7 @@ use ratatui::{
     style::Style,
     widgets::{BorderType, Borders, Clear, Padding, Widget},
 };
+use reactatui::measure::{Measured, blit_measured, measure_node};
 use reactatui::node::TuiNode;
 
 use crate::Block;
@@ -104,35 +105,10 @@ impl<'a> Dialog<'a> {
     // background_style setters unchanged from before...
 
     /// Render children into a scratch buffer covering `area` and return the
-    /// tight bounding box (width, height) of non-blank cells.
-    fn measure_content(children: Vec<TuiNode<'a>>, area: Rect) -> (u16, u16, Buffer) {
-        let mut scratch = Buffer::empty(area);
-        if !children.is_empty() {
-            TuiNode::fragment(children).render(area, &mut scratch);
-        }
-
-        let mut min_x = area.x + area.width;
-        let mut min_y = area.y + area.height;
-        let mut max_x = area.x;
-        let mut max_y = area.y;
-
-        for y in area.y..area.y + area.height {
-            for x in area.x..area.x + area.width {
-                if scratch[(x, y)].symbol() != " " {
-                    min_x = min_x.min(x);
-                    min_y = min_y.min(y);
-                    max_x = max_x.max(x);
-                    max_y = max_y.max(y);
-                }
-            }
-        }
-
-        if max_x < min_x || max_y < min_y {
-            // no content at all
-            (0, 0, scratch)
-        } else {
-            (max_x - min_x + 1, max_y - min_y + 1, scratch)
-        }
+    /// tight bounding box (width, height) of non-blank cells, via the shared
+    /// `reactatui::measure` primitive (also used by `Flex`).
+    fn measure_content(children: Vec<TuiNode<'a>>, area: Rect) -> Measured<'a> {
+        measure_node(TuiNode::fragment(children), area)
     }
 
     fn resolve_dim(
@@ -162,21 +138,21 @@ impl<'a> Widget for Dialog<'a> {
             return;
         }
         let borders = self.block.inner_block().inner(Rect::new(0, 0, 100, 100));
-        let border_w = 100 - borders.width; // horizontal space consumed by borders/padding
-        let border_h = 100 - borders.height; // vertical space consumed by borders/padding
+        let border_w = 100 - borders.width;
+        let border_h = 100 - borders.height;
 
-        let (content_w, content_h, scratch) = Self::measure_content(self.children, area);
+        let measured = Self::measure_content(self.children, area);
 
         let total_w = Self::resolve_dim(
             self.width,
-            content_w,
+            measured.content_width,
             border_w,
             area.width,
             self.flex_ignore,
         );
         let total_h = Self::resolve_dim(
             self.height,
-            content_h,
+            measured.content_height,
             border_h,
             area.height,
             self.flex_ignore,
@@ -199,15 +175,6 @@ impl<'a> Widget for Dialog<'a> {
         let inner_area = self.block.inner_block().inner(popup_area);
         self.block.into_inner().render(popup_area, buf);
 
-        // Blit the measured content from the scratch buffer into inner_area,
-        // clipped to whichever is smaller.
-        let copy_w = inner_area.width.min(content_w);
-        let copy_h = inner_area.height.min(content_h);
-        for y in 0..copy_h {
-            for x in 0..copy_w {
-                let src = &scratch[(area.x + x, area.y + y)];
-                buf[(inner_area.x + x, inner_area.y + y)] = src.clone();
-            }
-        }
+        blit_measured(&measured, inner_area, buf);
     }
 }

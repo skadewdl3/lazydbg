@@ -61,18 +61,18 @@ impl<'a> Block<'a> {
         self
     }
 
-    pub fn border_style(mut self, style: Style) -> Self {
-        self.inner = self.inner.border_style(style);
+    pub fn style(mut self, style: impl Into<Style>) -> Self {
+        self.inner = self.inner.style(style.into());
+        self
+    }
+
+    pub fn border_style(mut self, style: impl Into<Style>) -> Self {
+        self.inner = self.inner.border_style(style.into());
         self
     }
 
     pub fn border_type(mut self, border_type: BorderType) -> Self {
         self.inner = self.inner.border_type(border_type);
-        self
-    }
-
-    pub fn style(mut self, style: Style) -> Self {
-        self.inner = self.inner.style(style);
         self
     }
 

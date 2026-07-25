@@ -9,6 +9,7 @@ nom = "8.0.0"
 num_enum = "0.7.6"
 ratatui = { workspace = true }
 reactatui = { path = "../crates/reactatui" }
+reactatui-macros = { path = "../crates/reactatui-macros" }
 reactatui-widgets = { path = "../crates/reactatui-widgets" }
 lazydbg-mi = { path = "../crates/lazydbg-mi" }
 lazydbg-dap = { path = "../crates/lazydbg-dap" }

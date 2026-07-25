@@ -1,28 +1,34 @@
-//! React-like rendering and hooks for Ratatui.
-//!
-//! Provides the `tui!` macro for declaring TUI node trees and the `#[component]`
-//! attribute macro for functional components, along with a powerful hooks system.
-
 pub mod ext;
-pub mod flex;
 pub mod hooks;
 pub mod keys;
 pub mod layout;
+pub mod measure;
 pub mod node;
+pub mod style;
 
-pub use reactatui_macros::{children, component, tui};
+pub use reactatui_macros::{children, component, style, tui};
 
 pub use ext::FrameExt;
-pub use flex::{FlexItemNode, FlexNode};
-pub use layout::Padding;
+pub use layout::{
+    Align, FlexBasis, FlexItemNode, FlexNode, GridItemNode, GridNode, Justify, Padding,
+};
 pub use node::{StateHandle, TuiNode};
+pub use style::CombinedStyle;
 
 pub mod prelude {
     pub use crate::hooks::{
         Emitter, KeyHandle, Propagation, State, try_use_global, use_emit, use_global,
         use_global_or_default, use_global_with, use_key, use_on, use_state,
     };
-    pub use crate::{FlexNode, FrameExt, Padding, StateHandle, TuiNode, children, component, tui};
+    // layout::Style/Align/Justify/FlexBasis stay out of the prelude glob —
+    // this module already re-exports ratatui::style::Style below, and
+    // colliding those two under one glob import would be a footgun.
+    // CombinedStyle and the `style!` macro are safe to include: neither
+    // name collides with anything else here.
+    pub use crate::{
+        CombinedStyle, FlexItemNode, FlexNode, FrameExt, GridItemNode, GridNode, Padding,
+        StateHandle, TuiNode, children, component, style, tui,
+    };
     pub use ratatui::{
         layout::{Alignment, Constraint, Direction, Layout, Rect},
         style::{Color, Modifier, Style},

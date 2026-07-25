@@ -1,9 +1,5 @@
 use ratatui::widgets::Paragraph;
-use reactatui::{
-    TuiNode, component,
-    hooks::use_global_with,
-    tui,
-};
+use reactatui::{TuiNode, component, hooks::use_global_with, tui};
 
 #[component]
 pub fn Keybinds<'a>() -> TuiNode<'a> {

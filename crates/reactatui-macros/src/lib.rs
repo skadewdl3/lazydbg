@@ -6,10 +6,13 @@
 mod ast;
 mod generate;
 mod parser;
+mod style;
 
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemFn, parse_macro_input};
+
+use style::expand as expand_style;
 
 use crate::generate::{gen_fragment, gen_node};
 use crate::parser::Parser;
@@ -73,4 +76,13 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn children(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     input
+}
+
+/// Build a `CombinedStyle` — one value carrying both a
+/// `ratatui::style::Style` (colors) and a `reactatui::layout::Style`
+/// (flex/grid alignment). See `reactatui::style::CombinedStyle` for how
+/// consumers pick which half they get.
+#[proc_macro]
+pub fn style(input: TokenStream) -> TokenStream {
+    expand_style(input.into()).into()
 }
