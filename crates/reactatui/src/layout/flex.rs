@@ -92,10 +92,48 @@ pub struct FlexItemNode<'a> {
 
 impl<'a> FlexItemNode<'a> {
     pub fn new(node: impl Into<TuiNode<'a>>) -> Self {
+        let (style, node) = node.into().take_style();
         Self {
-            style: Style::default(),
+            style,
             ignore: false,
-            node: node.into(),
+            node,
+        }
+    }
+
+    fn flatten_fragments(self) -> Vec<Self> {
+        let Self {
+            style,
+            ignore,
+            node,
+        } = self;
+        match node {
+            TuiNode::Styled(inner, s) => Self {
+                style: s,
+                ignore,
+                node: *inner,
+            }
+            .flatten_fragments(),
+            TuiNode::Fragment(children) => children
+                .into_iter()
+                .flat_map(|child| {
+                    let (child_style, child_node) = match child {
+                        TuiNode::Styled(inner, s) => (s, *inner),
+                        other => (style, other),
+                    };
+                    Self {
+                        style: child_style,
+                        ignore,
+                        node: child_node,
+                    }
+                    .flatten_fragments()
+                })
+                .collect(),
+            TuiNode::Empty => Vec::new(),
+            node => vec![Self {
+                style,
+                ignore,
+                node,
+            }],
         }
     }
 
@@ -113,34 +151,6 @@ impl<'a> FlexItemNode<'a> {
     pub fn flex_ignore(mut self) -> Self {
         self.ignore = true;
         self
-    }
-
-    fn flatten_fragments(self) -> Vec<Self> {
-        let Self {
-            style,
-            ignore,
-            node,
-        } = self;
-
-        match node {
-            TuiNode::Fragment(children) => children
-                .into_iter()
-                .flat_map(|node| {
-                    Self {
-                        style,
-                        ignore,
-                        node,
-                    }
-                    .flatten_fragments()
-                })
-                .collect(),
-            TuiNode::Empty => Vec::new(),
-            node => vec![Self {
-                style,
-                ignore,
-                node,
-            }],
-        }
     }
 }
 

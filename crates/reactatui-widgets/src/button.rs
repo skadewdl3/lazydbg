@@ -42,23 +42,9 @@ pub fn Button<'a>(
     let hovered = use_state(|| false);
     let emit = use_emit::<()>("click");
 
-    let base_style = style.base();
-    let mut resolved_style = if disabled {
-        base_style.add_modifier(Modifier::DIM)
-    } else if hovered.get() {
-        base_style.add_modifier(Modifier::REVERSED)
-    } else {
-        base_style
-    };
-
-    if !disabled {
-        resolved_style = resolved_style.add_modifier(Modifier::BOLD);
-    }
-
     tui! {
         <Block::default
             borders={borders}
-            style={resolved_style}
             on:click={move |btn| {
                 if !disabled && btn == ratatui::crossterm::event::MouseButton::Left {
                     emit.emit(());
@@ -73,7 +59,7 @@ pub fn Button<'a>(
                 hovered.set(false);
             }}
         >
-            <Paragraph::new(label) alignment={Alignment::Center} style={resolved_style} />
+            <Paragraph::new(label) alignment={Alignment::Center} />
         </Block>
     }
 }

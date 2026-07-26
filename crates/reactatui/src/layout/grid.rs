@@ -119,10 +119,8 @@ pub struct GridItemNode<'a> {
 
 impl<'a> GridItemNode<'a> {
     pub fn new(node: impl Into<TuiNode<'a>>) -> Self {
-        Self {
-            style: Style::default(),
-            node: node.into(),
-        }
+        let (style, node) = node.into().take_style();
+        Self { style, node }
     }
 
     /// Item-level: `column`/`row`/`column_span`/`row_span` (placement,
@@ -133,13 +131,27 @@ impl<'a> GridItemNode<'a> {
         self
     }
 
-    fn flatten_fragments(self) -> Vec<Self> {
+    pub fn flatten_fragments(self) -> Vec<Self> {
         let Self { style, node } = self;
-
         match node {
+            TuiNode::Styled(inner, s) => Self {
+                style: s,
+                node: *inner,
+            }
+            .flatten_fragments(),
             TuiNode::Fragment(children) => children
                 .into_iter()
-                .flat_map(|node| Self { style, node }.flatten_fragments())
+                .flat_map(|child| {
+                    let (child_style, child_node) = match child {
+                        TuiNode::Styled(inner, s) => (s, *inner),
+                        other => (style, other),
+                    };
+                    Self {
+                        style: child_style,
+                        node: child_node,
+                    }
+                    .flatten_fragments()
+                })
                 .collect(),
             TuiNode::Empty => Vec::new(),
             node => vec![Self { style, node }],

@@ -4,8 +4,8 @@ use ratatui::{
     widgets::{Block, StatefulWidget, Widget},
 };
 
-use crate::hooks;
 use crate::layout::{FlexNode, GridNode};
+use crate::{hooks, layout::Style};
 
 /// Universal render node produced by the `tui!` macro.
 pub enum TuiNode<'a> {
@@ -13,6 +13,7 @@ pub enum TuiNode<'a> {
     Fragment(Vec<TuiNode<'a>>),
     Flex(FlexNode<'a>),
     Grid(GridNode<'a>),
+    Styled(Box<TuiNode<'a>>, Style),
     Empty,
 }
 
@@ -64,6 +65,17 @@ impl<'a> TuiNode<'a> {
         Self::Empty
     }
 
+    pub fn style(self, style: impl Into<Style>) -> Self {
+        Self::Styled(Box::new(self), style.into())
+    }
+
+    pub fn take_style(self) -> (Style, Self) {
+        match self {
+            Self::Styled(inner, style) => (style, *inner),
+            other => (Style::default(), other),
+        }
+    }
+
     pub fn block(self, block: Block<'a>) -> Self {
         Self::Widget(Box::new(move |area, buf| {
             let inner = block.inner(area);
@@ -92,6 +104,7 @@ impl<'a> Widget for TuiNode<'a> {
             TuiNode::Fragment(children) => render_fragment(children, area, buf),
             TuiNode::Flex(flex) => flex.render(area, buf),
             TuiNode::Grid(grid) => grid.render(area, buf),
+            TuiNode::Styled(inner, _style) => inner.render(area, buf),
             TuiNode::Empty => {}
         }
     }

@@ -2,9 +2,9 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Direction, Rect};
 use ratatui::widgets::{Paragraph, Widget};
 use reactatui::hooks::{register_mouse_region, use_key, use_state};
-use reactatui::keybindings;
-use reactatui::measure::{blit_measured, measure_node};
+use reactatui::measure::{Measured, blit_measured, measure_node};
 use reactatui::prelude::*;
+use reactatui::{FlexBasis, keybindings};
 
 use crate::Scroll;
 
@@ -59,6 +59,7 @@ fn apply_scroll_delta(offset: &mut u16, delta: i16) {
 /// tracked in *items*, not rows — every row is assumed to be exactly as
 /// tall as the first item, so no per-row-height bookkeeping is needed
 /// beyond that one measurement.
+
 fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
     let offset = use_state::<u16>(|| 0);
     let keys = use_key();
@@ -87,17 +88,27 @@ fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
         );
 
         let item_count = items.len() as u16;
-        let mut iter = items.into_iter();
-        let first_item = iter.next().expect("checked non-empty above");
-        let rest: Vec<TuiNode<'a>> = iter.collect(); // original items[1..]
+        let mut iter = items.into_iter().map(TuiNode::take_style);
 
-        // Measure the first child once to get a uniform row height —
-        // this consumes it (TuiNode::Widget is FnOnce), so we keep the
-        // rendered scratch buffer around to blit from if it's in view,
-        // rather than trying to `.render()` it a second time.
+        let (first_style, first_node) = iter.next().expect("checked non-empty above");
+        let rest: Vec<(reactatui::layout::Style, TuiNode<'a>)> = iter.collect();
         let probe_area = Rect::new(area.x, area.y, area.width, area.height);
-        let measured_first = measure_node(first_item, probe_area);
-        let item_height = measured_first.content_height.max(1);
+
+        // Explicit flex-basis on the first item *is* the row height for
+        // every row — no measuring, matching what a non-virtual <Flex>
+        // with the same style would do. Only `flex-basis: auto` (the
+        // default) falls back to measuring, same heuristic <Scroll> uses.
+        let (item_height, mut first_node, first_prerendered): (
+            u16,
+            Option<TuiNode<'a>>,
+            Option<Measured<'a>>,
+        ) = match first_style.flex_basis {
+            FlexBasis::Length(n) => (n.max(1), Some(first_node), None),
+            FlexBasis::Auto => {
+                let measured = measure_node(first_node, probe_area);
+                (measured.content_height.max(1), None, Some(measured))
+            }
+        };
 
         let visible_items = (area.height / item_height).max(1);
         let max_offset = item_count.saturating_sub(visible_items);
@@ -112,18 +123,17 @@ fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
 
         if first_index == 0 && row < bottom {
             let height = item_height.min(bottom.saturating_sub(row));
-            blit_measured(
-                &measured_first,
-                Rect::new(area.x, row, area.width, height),
-                buf,
-            );
+            let target = Rect::new(area.x, row, area.width, height);
+            if let Some(measured) = &first_prerendered {
+                blit_measured(measured, target, buf);
+            } else if let Some(node) = first_node.take() {
+                node.render(target, buf);
+            }
             row = row.saturating_add(height);
         }
 
-        // `rest` is items[1..], so skip (first_index - 1) of it to reach
-        // the same absolute index `first_index` continues from.
         let skip = first_index.saturating_sub(1);
-        for item in rest.into_iter().skip(skip) {
+        for (_, item) in rest.into_iter().skip(skip) {
             if row >= bottom {
                 break;
             }

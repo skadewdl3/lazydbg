@@ -518,7 +518,7 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
 
     let wrapped = maybe_wrap_with_mouse(call, &element.props);
 
-    if event_hooks.is_empty() {
+    let with_events = if event_hooks.is_empty() {
         wrapped
     } else {
         quote! {{
@@ -526,6 +526,11 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
             #(#event_hooks)*
             #wrapped
         }}
+    };
+
+    match named_prop(&element.props, "style") {
+        Some(style_val) => quote! { ::reactatui::TuiNode::style(#with_events, #style_val) },
+        None => with_events,
     }
 }
 
