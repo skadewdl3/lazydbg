@@ -5,7 +5,8 @@ use ratatui::{
 };
 
 use crate::layout::Padding;
-use crate::layout::style::{Align, FlexBasis, Style, distribute};
+use crate::layout::size::Size;
+use crate::layout::style::{Align, Style, distribute};
 use crate::measure::{Measured, blit_measured, measure_node};
 use crate::node::TuiNode;
 
@@ -54,6 +55,10 @@ impl<'a> FlexNode<'a> {
         self
     }
 
+    /// Sums each item's main-axis contribution: `Length`/`Percent` sizes
+    /// count directly, `Fr` and `Auto` (unmeasured) contribute 0 — same
+    /// convention Grid's auto-tracks use for the "guaranteed minimum"
+    /// half of sizing.
     pub fn natural_size(&self, cross_axis_hint: u16) -> (u16, u16) {
         let participating: Vec<&FlexItemNode<'_>> =
             self.items.iter().filter(|it| !it.ignore).collect();
@@ -64,9 +69,9 @@ impl<'a> FlexNode<'a> {
         let mut main: u32 = u32::from(gap_total);
 
         for item in &participating {
-            main += match item.style.flex_basis {
-                FlexBasis::Length(n) => u32::from(n),
-                FlexBasis::Auto => 0,
+            main += match item.style.size {
+                Size::Length(n) => u32::from(n),
+                Size::Percent(_) | Size::Fr(_) | Size::Auto => 0,
             };
         }
 
@@ -137,8 +142,12 @@ impl<'a> FlexItemNode<'a> {
         }
     }
 
-    /// Item-level: `flex_grow`/`flex_shrink`/`flex_basis` (main-axis
-    /// sizing) and `align_self` (cross-axis override).
+    /// Item-level: `size` (main-axis sizing — `auto` measures content,
+    /// `Length`/`Percent` pin it, `"Nfr"` grows to take a share of
+    /// leftover space — this is the *only* way an item grows), `shrink`
+    /// (how eagerly it gives back space below `size` on overflow — the
+    /// one property that's genuinely flex-only, since grid tracks never
+    /// shrink), and `align_self` (cross-axis override).
     pub fn style(mut self, style: impl Into<Style>) -> Self {
         self.style = style.into();
         self
@@ -207,7 +216,6 @@ impl<'a> Widget for FlexNode<'a> {
 
         if count != 0 && area.width != 0 && area.height != 0 {
             let styles: Vec<Style> = participating.iter().map(|it| it.style).collect();
-            let grow: Vec<f32> = styles.iter().map(Style::resolve_flex_grow).collect();
             let mut nodes: Vec<Option<TuiNode<'a>>> =
                 participating.into_iter().map(|it| Some(it.node)).collect();
 
@@ -221,21 +229,29 @@ impl<'a> Widget for FlexNode<'a> {
                 Direction::Vertical => area.width,
             };
 
-            // Measure any item whose basis is content-driven (`Auto`) or
-            // whose resolved cross-axis alignment isn't `Stretch` — both
-            // need to know the item's intrinsic size before final layout.
+            // Resolve each item's main-axis contribution:
+            // - `Length`/`Percent` pin a concrete basis directly.
+            // - `Fr(f)` contributes zero basis but registers a grow weight —
+            //   `Fr` is the *only* way an item grows; there is no implicit
+            //   "Auto grows by default" anymore.
+            // - `Auto` (or any item with non-Stretch cross-axis alignment)
+            //   needs measuring before we know its basis.
             let mut premeasured: Vec<Option<Measured<'a>>> = (0..count).map(|_| None).collect();
             let mut basis = vec![0u16; count];
+            let mut grow = vec![0f32; count];
 
             for i in 0..count {
-                if let FlexBasis::Length(n) = styles[i].flex_basis {
-                    basis[i] = n;
+                match styles[i].size {
+                    Size::Length(n) => basis[i] = n,
+                    Size::Percent(p) => {
+                        basis[i] = ((u32::from(available) * u32::from(p)) / 100) as u16
+                    }
+                    Size::Fr(f) => grow[i] = f as f32,
+                    Size::Auto => {}
                 }
 
                 let align = Style::resolve_align(&container_style, &styles[i]);
-                let needs_measure = (matches!(styles[i].flex_basis, FlexBasis::Auto)
-                    && grow[i] == 0.0)
-                    || align != Align::Stretch;
+                let needs_measure = matches!(styles[i].size, Size::Auto) || align != Align::Stretch;
 
                 if needs_measure {
                     let node = nodes[i].take().expect("node already taken");
@@ -248,7 +264,7 @@ impl<'a> Widget for FlexNode<'a> {
                         }
                     };
                     let measured = measure_node(node, probe);
-                    if matches!(styles[i].flex_basis, FlexBasis::Auto) {
+                    if matches!(styles[i].size, Size::Auto) {
                         basis[i] = match direction {
                             Direction::Horizontal => measured.content_width,
                             Direction::Vertical => measured.content_height,
@@ -266,10 +282,11 @@ impl<'a> Widget for FlexNode<'a> {
 
             if free_space > 0 {
                 // Grow phase: distribute leftover space proportionally by
-                // flex_grow. If nothing grows, sizes stay at basis and
-                // leftover is handled by justify_content below (this is
-                // the CSS rule: justify-content only matters when no item
-                // grows to consume the leftover space).
+                // each item's `Fr` weight. If nothing has a weight, sizes
+                // stay at basis and leftover is handled by
+                // justify_content below (CSS rule: justify-content only
+                // matters when nothing grows to consume the leftover
+                // space).
                 let free_space = free_space as u16;
                 let total_grow: f32 = grow.iter().sum();
                 if total_grow > 0.0 {
@@ -294,17 +311,17 @@ impl<'a> Widget for FlexNode<'a> {
                 }
             } else if free_space < 0 {
                 // Shrink phase: over budget, reduce proportionally to
-                // flex_shrink * basis (CSS's actual weighting).
+                // shrink * basis (CSS's actual weighting).
                 let overflow = (-free_space) as u16;
                 let total_shrink_weighted: f32 = styles
                     .iter()
                     .zip(basis.iter())
-                    .map(|(s, &b)| s.flex_shrink * f32::from(b))
+                    .map(|(s, &b)| s.shrink * f32::from(b))
                     .sum();
                 if total_shrink_weighted > 0.0 {
                     let mut used_reduction = 0u16;
                     for i in 0..count {
-                        let weight = styles[i].flex_shrink * f32::from(basis[i]);
+                        let weight = styles[i].shrink * f32::from(basis[i]);
                         let share = weight / total_shrink_weighted;
                         let reduce = (f32::from(overflow) * share).floor() as u16;
                         let reduce = reduce
@@ -315,7 +332,7 @@ impl<'a> Widget for FlexNode<'a> {
                     }
                 }
                 // else: nothing can shrink — items overflow, matching
-                // CSS's behavior when flex-shrink is 0 everywhere.
+                // CSS's behavior when shrink is 0 everywhere.
             }
 
             let used = sizes

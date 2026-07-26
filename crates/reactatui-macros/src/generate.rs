@@ -295,26 +295,39 @@ fn gen_grid_if_push(node: &IfNode, items_ident: &proc_macro2::Ident) -> TokenStr
 }
 
 fn gen_element_without_grid(element: &Element) -> TokenStream2 {
+    let is_nested_container = matches!(
+        element.tag.simple_name().as_deref(),
+        Some("Flex") | Some("Grid")
+    );
+
     let mut clone = element.clone();
     clone.props.retain(|prop| match prop {
-        Prop::Named { name, .. } | Prop::Boolean(name) => name != "style",
+        Prop::Named { name, .. } | Prop::Boolean(name) => {
+            !(name == "style" && !is_nested_container)
+        }
         Prop::Spread(_) | Prop::Event { .. } => true,
     });
     gen_element(&clone)
 }
 
 fn gen_element_without_flex(element: &Element) -> TokenStream2 {
+    let is_nested_container = matches!(
+        element.tag.simple_name().as_deref(),
+        Some("Flex") | Some("Grid")
+    );
+
     let mut clone = element.clone();
     clone.props.retain(|prop| match prop {
-        Prop::Named { name, .. } | Prop::Boolean(name) => !matches!(
-            name.to_string().as_str(),
-            "flex_ignore" | "min" | "max" | "style"
-        ),
+        Prop::Named { name, .. } | Prop::Boolean(name) => {
+            let name = name.to_string();
+            let strip_item_only = matches!(name.as_str(), "flex_ignore" | "min" | "max");
+            let strip_style = name == "style" && !is_nested_container;
+            !(strip_item_only || strip_style)
+        }
         Prop::Spread(_) | Prop::Event { .. } => true,
     });
     gen_element(&clone)
 }
-
 /// Wrap a `TuiNode`-producing expression with mouse-region registration if
 /// any mouse/scroll event props were present on the element.
 fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {

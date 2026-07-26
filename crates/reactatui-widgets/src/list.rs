@@ -2,9 +2,10 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Direction, Rect};
 use ratatui::widgets::{Paragraph, Widget};
 use reactatui::hooks::{register_mouse_region, use_key, use_state};
+use reactatui::keybindings;
+use reactatui::layout::Size;
 use reactatui::measure::{Measured, blit_measured, measure_node};
 use reactatui::prelude::*;
-use reactatui::{FlexBasis, keybindings};
 
 use crate::Scroll;
 
@@ -94,17 +95,25 @@ fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
         let rest: Vec<(reactatui::layout::Style, TuiNode<'a>)> = iter.collect();
         let probe_area = Rect::new(area.x, area.y, area.width, area.height);
 
-        // Explicit flex-basis on the first item *is* the row height for
-        // every row — no measuring, matching what a non-virtual <Flex>
-        // with the same style would do. Only `flex-basis: auto` (the
-        // default) falls back to measuring, same heuristic <Scroll> uses.
+        // Explicit `size` on the first item *is* the row height for every
+        // row — no measuring, matching what a non-virtual <Flex> with the
+        // same style would do. `Percent` resolves against the viewport
+        // height, same convention Flex's basis-resolution pass uses.
+        // `Fr` has no "leftover space" to share in a virtualized,
+        // partially off-screen list, so — like `Auto` — it falls back to
+        // measuring the first row's content.
         let (item_height, mut first_node, first_prerendered): (
             u16,
             Option<TuiNode<'a>>,
             Option<Measured<'a>>,
-        ) = match first_style.flex_basis {
-            FlexBasis::Length(n) => (n.max(1), Some(first_node), None),
-            FlexBasis::Auto => {
+        ) = match first_style.size {
+            Size::Length(n) => (n.max(1), Some(first_node), None),
+            Size::Percent(p) => (
+                (((u32::from(area.height) * u32::from(p)) / 100) as u16).max(1),
+                Some(first_node),
+                None,
+            ),
+            Size::Auto | Size::Fr(_) => {
                 let measured = measure_node(first_node, probe_area);
                 (measured.content_height.max(1), None, Some(measured))
             }

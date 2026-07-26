@@ -1,16 +1,14 @@
-use std::collections::HashSet;
-
-use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
-
 use crate::layout::Padding;
+use crate::layout::size::{Size, parse_size_list, resolve_sizes};
 use crate::layout::style::{Align, Style, align_rect, distribute};
-use crate::layout::tracks::{TrackSize, parse_track_list, resolve_track_sizes};
 use crate::measure::{Measured, blit_measured, measure_node};
 use crate::node::TuiNode;
+use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+use std::collections::HashSet;
 
 pub struct GridNode<'a> {
-    columns: Vec<TrackSize>,
-    rows: Vec<TrackSize>,
+    columns: Vec<Size>,
+    rows: Vec<Size>,
     gap_x: u16,
     gap_y: u16,
     padding: Padding,
@@ -21,8 +19,8 @@ pub struct GridNode<'a> {
 impl<'a> GridNode<'a> {
     pub fn new(items: impl Into<Vec<GridItemNode<'a>>>) -> Self {
         Self {
-            columns: vec![TrackSize::Fr(1)],
-            rows: vec![TrackSize::Fr(1)],
+            columns: vec![Size::Fr(1)],
+            rows: vec![Size::Fr(1)],
             gap_x: 0,
             gap_y: 0,
             padding: Padding::default(),
@@ -33,13 +31,13 @@ impl<'a> GridNode<'a> {
 
     /// e.g. `"auto, 1fr, 20"`.
     pub fn columns(mut self, spec: impl AsRef<str>) -> Self {
-        self.columns = parse_track_list(spec.as_ref());
+        self.columns = parse_size_list(spec.as_ref());
         self
     }
 
     /// e.g. `"3, 1fr, auto"`.
     pub fn rows(mut self, spec: impl AsRef<str>) -> Self {
-        self.rows = parse_track_list(spec.as_ref());
+        self.rows = parse_size_list(spec.as_ref());
         self
     }
 
@@ -99,13 +97,13 @@ impl<'a> GridNode<'a> {
         (width, height)
     }
 
-    fn track_total(tracks: &[TrackSize], reference: u16) -> u16 {
+    fn track_total(tracks: &[Size], reference: u16) -> u16 {
         let mut total: u32 = 0;
         for track in tracks {
             total += match track {
-                TrackSize::Length(n) => u32::from(*n),
-                TrackSize::Percent(p) => (u32::from(reference) * u32::from(*p)) / 100,
-                TrackSize::Fr(_) | TrackSize::Auto => 0,
+                Size::Length(n) => u32::from(*n),
+                Size::Percent(p) => (u32::from(reference) * u32::from(*p)) / 100,
+                Size::Fr(_) | Size::Auto => 0,
             };
         }
         total.min(u32::from(u16::MAX)) as u16
@@ -125,7 +123,9 @@ impl<'a> GridItemNode<'a> {
 
     /// Item-level: `column`/`row`/`column_span`/`row_span` (placement,
     /// `None` for auto-flow), `align_self`/`justify_self` (per-cell
-    /// alignment overrides).
+    /// alignment overrides), `size` (an explicit hint for the cell's own
+    /// dimension when it sits in an `auto` column/row — skips measuring
+    /// the same way it would in a Flex item).
     pub fn style(mut self, style: impl Into<crate::layout::Style>) -> Self {
         self.style = style.into();
         self
@@ -264,6 +264,19 @@ fn track_offsets(sizes: &[u16], gap: u16, extra_gaps: &[u16], leading: u16) -> V
     offsets
 }
 
+/// Resolve an item's own `size` into a concrete cell-count hint for an
+/// `auto` track, if `size` gives us one directly (`Length`/`Percent`)
+/// without needing to measure content. `Fr`/`Auto` return `None` — `Fr`
+/// has no meaning inside a per-cell auto-track hint (grid tracks don't
+/// grow the way flex items do), and `Auto` means "go measure it".
+fn size_hint(size: Size, reference: u16) -> Option<u16> {
+    match size {
+        Size::Length(n) => Some(n),
+        Size::Percent(p) => Some(((u32::from(reference) * u32::from(p)) / 100) as u16),
+        Size::Fr(_) | Size::Auto => None,
+    }
+}
+
 impl<'a> Widget for GridNode<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let area = self.padding.apply(area);
@@ -310,10 +323,10 @@ impl<'a> Widget for GridNode<'a> {
             .max()
             .unwrap_or(0);
         while columns.len() < needed_cols {
-            columns.push(TrackSize::Auto);
+            columns.push(Size::Auto);
         }
         while rows.len() < needed_rows {
-            rows.push(TrackSize::Auto);
+            rows.push(Size::Auto);
         }
 
         let col_count = columns.len();
@@ -326,7 +339,10 @@ impl<'a> Widget for GridNode<'a> {
 
         // Measure any item in an auto (non-spanning) column/row, or with
         // non-Stretch alignment on either axis — alignment needs intrinsic
-        // size regardless of which track type placed the item.
+        // size regardless of which track type placed the item. An item
+        // can skip measuring by giving its own `size` (Length/Percent) —
+        // that hint seeds the auto track directly, same idea as a Flex
+        // item's `size` skipping the content probe.
         let mut premeasured: Vec<Option<Measured<'a>>> = (0..nodes.len()).map(|_| None).collect();
         let mut auto_col_size = vec![0u16; col_count];
         let mut auto_row_size = vec![0u16; row_count];
@@ -335,30 +351,45 @@ impl<'a> Widget for GridNode<'a> {
         for (i, ((col, row), style)) in placements.iter().zip(styles.iter()).enumerate() {
             let col_span = style.column_span.max(1);
             let row_span = style.row_span.max(1);
-            let in_auto_col = col_span == 1 && matches!(columns.get(*col), Some(TrackSize::Auto));
-            let in_auto_row = row_span == 1 && matches!(rows.get(*row), Some(TrackSize::Auto));
+            let in_auto_col = col_span == 1 && matches!(columns.get(*col), Some(Size::Auto));
+            let in_auto_row = row_span == 1 && matches!(rows.get(*row), Some(Size::Auto));
             let align_row = Style::resolve_align(&container_style, style);
             let align_col = Style::resolve_justify_self(&container_style, style);
 
-            if in_auto_col
-                || in_auto_row
+            let col_hint = in_auto_col
+                .then(|| size_hint(style.size, available_w))
+                .flatten();
+            let row_hint = in_auto_row
+                .then(|| size_hint(style.size, available_h))
+                .flatten();
+
+            if let Some(w) = col_hint {
+                auto_col_size[*col] = auto_col_size[*col].max(w);
+            }
+            if let Some(h) = row_hint {
+                auto_row_size[*row] = auto_row_size[*row].max(h);
+            }
+
+            let needs_measure = (in_auto_col && col_hint.is_none())
+                || (in_auto_row && row_hint.is_none())
                 || align_row != Align::Stretch
-                || align_col != Align::Stretch
-            {
+                || align_col != Align::Stretch;
+
+            if needs_measure {
                 let node = nodes[i].take().expect("node already taken");
                 let measured = measure_node(node, probe_area);
-                if in_auto_col {
+                if in_auto_col && col_hint.is_none() {
                     auto_col_size[*col] = auto_col_size[*col].max(measured.content_width);
                 }
-                if in_auto_row {
+                if in_auto_row && row_hint.is_none() {
                     auto_row_size[*row] = auto_row_size[*row].max(measured.content_height);
                 }
                 premeasured[i] = Some(measured);
             }
         }
 
-        let col_sizes = resolve_track_sizes(&columns, available_w, &auto_col_size);
-        let row_sizes = resolve_track_sizes(&rows, available_h, &auto_row_size);
+        let col_sizes = resolve_sizes(&columns, available_w, &auto_col_size);
+        let row_sizes = resolve_sizes(&rows, available_h, &auto_row_size);
 
         let col_used = col_sizes.iter().map(|&s| u16::from(s)).sum::<u16>() as u16 + total_gap_x;
         let row_used = row_sizes.iter().map(|&s| u16::from(s)).sum::<u16>() as u16 + total_gap_y;

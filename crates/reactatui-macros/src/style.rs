@@ -1,15 +1,17 @@
 //! Implementation of the `style!` macro.
 //!
 //! CSS-flavored, semicolon-terminated grammar. Property names may be
-//! written with hyphens (`flex-basis`) or underscores (`flex_basis`) —
+//! written with hyphens (`align-items`) or underscores (`align_items`) —
 //! both spellings work identically:
 //!
 //! ```ignore
 //! style! {
 //!     background: green;
 //!     color: rgb(255, 23, 45);
-//!     flex-basis: 2;      // or `flex-basis: auto;`
-//!     flex-grow: 1;
+//!     size: 2;        // pins the item's main-axis (flex) / auto-track (grid) size
+//!     size: auto;     // measure content — the default, spelled out explicitly
+//!     size: "1fr";    // grow to take a share of leftover space (flex only)
+//!     shrink: 0;      // flex-only: opt out of shrinking below `size`
 //!     bold;
 //!
 //!     // conditional flags — `else if` and `else` are both optional
@@ -36,12 +38,10 @@
 //! `light-blue`, ...), `rgb(r, g, b)`, or any `Color`-typed expression
 //! (e.g. `Color::Indexed(3)` or a variable).
 //!
-//! Recognized `flex-basis` values: `auto`, or any cell-count expression
-//! — wrapped in `FlexBasis::Length` automatically.
-//!
-//! Every other property (`flex-grow`, `flex-shrink`, `column`, `row`,
-//! `justify-content`, `align-items`, ...) takes a plain Rust expression,
-//! same as before.
+//! Recognized `size` values: `auto`, a bare cell-count expression (wrapped
+//! in `Size::Length` automatically), or any other expression that
+//! implements `Into<Size>` — e.g. a `"1fr"` or `"50%"` string literal.
+//! Same property, same meaning, on both Flex items and Grid items.
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
@@ -57,11 +57,11 @@ use syn::{
 // ---------------------------------------------------------------------------
 
 /// A single value that can appear after `property:` — either a plain
-/// expression, a color, a flex-basis keyword, a flag, or a single-value
+/// expression, a color, a `size: auto` keyword, a flag, or a single-value
 /// `if` chain (used for `color: if cond { red } else { blue }`).
 enum StyleValueKind {
     Expr(Expr),
-    FlexBasisAuto,
+    SizeAuto,
     NamedColor(&'static str),
     Rgb(Expr, Expr, Expr),
     #[allow(dead_code)]
@@ -107,7 +107,7 @@ enum StyleEntry {
 // ---------------------------------------------------------------------------
 
 /// Reads one `word` or `hyphen-joined-word` sequence (e.g. `flex`,
-/// `dark-gray`, `flex-basis`) starting at the current position.
+/// `dark-gray`, `align-items`) starting at the current position.
 fn read_kebab_word(input: ParseStream) -> syn::Result<(String, Span)> {
     let first: Ident = input.parse()?;
     let span = first.span();
@@ -125,24 +125,24 @@ fn read_kebab_word(input: ParseStream) -> syn::Result<(String, Span)> {
 //  Single-value `if` parser (for property values like `color: if …`)
 // ---------------------------------------------------------------------------
 
-fn parse_flex_basis_value(input: ParseStream) -> syn::Result<StyleValueKind> {
+fn parse_size_value(input: ParseStream) -> syn::Result<StyleValueKind> {
     if input.peek(Token![if]) {
-        return parse_if_value(input, parse_flex_basis_value);
+        return parse_if_value(input, parse_size_value);
     }
     let fork = input.fork();
     if let Ok((word, _)) = read_kebab_word(&fork)
         && word == "auto"
     {
         input.advance_to(&fork);
-        return Ok(StyleValueKind::FlexBasisAuto);
+        return Ok(StyleValueKind::SizeAuto);
     }
 
     let expr: Expr = input.parse().map_err(|e| {
         syn::Error::new(
             e.span(),
             format!(
-                "expected `auto` or a cell-count expression for `flex-basis` \
-                 (e.g. `flex-basis: 3;` or `flex-basis: auto;`) — {e}"
+                "expected `auto`, a cell-count expression, or a value convertible \
+                 to `Size` (e.g. a \"1fr\"/\"50%\" string) for `size` — {e}"
             ),
         )
     })?;
@@ -378,7 +378,7 @@ fn emit_color(value: StyleValueKind) -> syn::Result<TokenStream2> {
                 "an `if` without an `else` can only be used as a top-level property value",
             ));
         }
-        StyleValueKind::FlexBasisAuto => {
+        StyleValueKind::SizeAuto => {
             return Err(syn::Error::new(
                 Span::call_site(),
                 "`auto` isn't a valid color value",
@@ -417,13 +417,13 @@ fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2>
                 "an `if` without an `else` can only be used as a top-level property value",
             ));
         }
-        StyleValueKind::FlexBasisAuto if method == "flex_basis" => {
-            quote! { ::reactatui::layout::FlexBasis::Auto }
+        StyleValueKind::SizeAuto if method == "size" => {
+            quote! { ::reactatui::layout::Size::Auto }
         }
-        StyleValueKind::Expr(expr) if method == "flex_basis" => {
-            quote! { ::reactatui::layout::FlexBasis::Length((#expr) as u16) }
+        StyleValueKind::Expr(expr) if method == "size" => {
+            quote! { ::core::convert::Into::<::reactatui::layout::Size>::into(#expr) }
         }
-        StyleValueKind::Expr(expr) if matches!(method, "flex_grow" | "flex_shrink") => {
+        StyleValueKind::Expr(expr) if method == "shrink" => {
             quote! { (#expr) as f32 }
         }
         StyleValueKind::Expr(expr)
@@ -434,10 +434,10 @@ fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2>
         StyleValueKind::Expr(expr) => {
             quote! { #expr }
         }
-        StyleValueKind::FlexBasisAuto => {
+        StyleValueKind::SizeAuto => {
             return Err(syn::Error::new(
                 Span::call_site(),
-                "`auto` is only valid for `flex-basis`",
+                "`auto` is only valid for `size`",
             ));
         }
         StyleValueKind::NamedColor(_) | StyleValueKind::Rgb(..) => {
@@ -550,7 +550,7 @@ impl Parse for StyleEntry {
         let (raw_key, key_span) = read_kebab_word(input).map_err(|_| {
             syn::Error::new(
                 input.span(),
-                "expected a style property name here (e.g. `flex-grow`, `color`, `bold`)",
+                "expected a style property name here (e.g. `size`, `color`, `bold`)",
             )
         })?;
         let key = raw_key.replace('-', "_");
@@ -568,7 +568,7 @@ impl Parse for StyleEntry {
         })?;
 
         let value = match key.as_str() {
-            "flex_basis" => parse_flex_basis_value(input)?,
+            "size" => parse_size_value(input)?,
             "color" | "fg" | "background" | "bg" | "underline_color" => parse_color_value(input)?,
             _ => StyleValueKind::Expr(input.parse().map_err(|e| {
                 syn::Error::new(
@@ -628,9 +628,8 @@ fn lookup_key(name: &str) -> Option<(Target, &'static str)> {
         "justify_items" => (Layout, "justify_items"),
         "align_self" => (Layout, "align_self"),
         "justify_self" => (Layout, "justify_self"),
-        "flex_grow" => (Layout, "flex_grow"),
-        "flex_shrink" => (Layout, "flex_shrink"),
-        "flex_basis" => (Layout, "flex_basis"),
+        "size" => (Layout, "size"),
+        "shrink" => (Layout, "shrink"),
         "gap" => (Layout, "gap"),
         "column" => (Layout, "column"),
         "row" => (Layout, "row"),
@@ -655,9 +654,9 @@ const ALL_KEYS: &[&str] = &[
     "justify-items",
     "align-self",
     "justify-self",
-    "flex-grow",
-    "flex-shrink",
-    "flex-basis",
+    "size",
+    "shrink",
+    "gap",
     "column",
     "row",
     "column-span",

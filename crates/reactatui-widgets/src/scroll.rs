@@ -1,4 +1,5 @@
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+use reactatui::layout::Size;
 use reactatui::{hooks::register_mouse_region, keybindings, measure::measure_node, prelude::*};
 
 fn blit_window(src: &Buffer, src_area: Rect, offset: (u16, u16), target: Rect, buf: &mut Buffer) {
@@ -79,33 +80,6 @@ impl<'a> Widget for ScrollView<'a> {
 
 /// Makes any children scrollable in both directions, clamped so you can't
 /// scroll past the end of the content.
-///
-/// If the (sole) child is a `<Flex>` whose items all have an explicit
-/// `flex-basis` — the normal shape for a scrollable list — its exact
-/// content size is computed analytically via `FlexNode::natural_size`
-/// (pure arithmetic, no rendering) and rendered once at exactly that size.
-/// No probing, no flicker, and it actually overflows the way `flex-basis`
-/// implies it should, instead of being silently shrunk to fit.
-///
-/// Anything else (a bare `Paragraph`, a `Grid`, ...) falls back to a
-/// growing-probe heuristic: render into successively larger canvases,
-/// caching the settled size in state across frames. This works well for
-/// densely-painted content but — like the Flex case before this fix —
-/// can't reliably detect overflow in sparse/mostly-blank content. `Grid`
-/// isn't given exact sizing yet; if you hit the same issue with one,
-/// give its rows/columns fixed sizes and consider it a known gap.
-///
-/// ```ignore
-/// tui! {
-///     <Scroll is_active={Pane::Logs.is_active()}>
-///         <Flex direction={Direction::Vertical}>
-///             for row in rows {
-///                 <RowItem(row) style={style!{ flex-basis: 3 }} />
-///             }
-///         </Flex>
-///     </Scroll>
-/// }
-/// ```
 #[component]
 pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> TuiNode<'a> {
     let offset = use_state::<(u16, u16)>(|| (0, 0));

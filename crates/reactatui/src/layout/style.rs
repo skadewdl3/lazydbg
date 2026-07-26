@@ -1,7 +1,4 @@
-//! The single `Style` type driving both `Flex` and `Grid` — CSS
-//! flexbox/grid alignment semantics (align-items/self, justify-items/self,
-//! justify-content/align-content, flex-grow/shrink/basis, grid placement).
-
+use crate::layout::size::Size;
 use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -24,15 +21,6 @@ pub enum Justify {
     SpaceEvenly,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum FlexBasis {
-    /// Size to intrinsic content (measured), like CSS `flex-basis: auto`
-    /// combined with `width/height: auto` (no explicit basis set).
-    #[default]
-    Auto,
-    Length(u16),
-}
-
 /// Unified layout style, applied at both container and item level — same
 /// shape CSS uses (an element's `align-items` is a sibling concept to its
 /// own `align-self`). Irrelevant fields at a given level are just unused.
@@ -53,10 +41,21 @@ pub struct Style {
     pub align_self: Option<Align>,
     /// Overrides the container's `justify_items` for this item only (grid only).
     pub justify_self: Option<Align>,
-    pub flex_grow: f32,
-    pub flex_grow_set: bool,
-    pub flex_shrink: f32,
-    pub flex_basis: FlexBasis,
+
+    /// Size along the primary axis. Shared, single-name property across
+    /// Flex and Grid:
+    /// - `Auto` (the default, everywhere): measure intrinsic content.
+    /// - `Length`/`Percent`: pin an explicit size.
+    /// - `Fr(n)`: grow to take a proportional share of leftover space.
+    ///   This is the *only* way an item grows — nothing grows implicitly.
+    ///   In Grid, `Fr` on an item has no effect (grid tracks, not items,
+    ///   carry `Fr` sizing); it's only meaningful on Flex items.
+    pub size: Size,
+    /// Flex-only: how eagerly this item shrinks below `size` on overflow,
+    /// weighted the CSS way (`shrink * basis`). No effect in Grid — grid
+    /// tracks never shrink below their resolved size, same as CSS Grid.
+    pub shrink: f32,
+
     pub gap: u16,
 
     /// Grid placement. `None` triggers CSS-grid-style auto-placement.
@@ -75,15 +74,13 @@ impl Default for Style {
             justify_items: Align::Stretch,
             align_self: None,
             justify_self: None,
-            flex_grow: 0.0,
-            flex_grow_set: false,
-            flex_shrink: 1.0,
-            flex_basis: FlexBasis::Auto,
+            size: Size::Auto,
+            shrink: 1.0,
+            gap: 0,
             column: None,
             row: None,
             column_span: 1,
             row_span: 1,
-            gap: 0,
         }
     }
 }
@@ -117,20 +114,14 @@ impl Style {
         self.justify_self = Some(a);
         self
     }
-    pub fn flex_grow(mut self, g: f32) -> Self {
-        self.flex_grow = g.max(0.0);
-        self.flex_grow_set = true;
+    pub fn size(mut self, s: impl Into<Size>) -> Self {
+        self.size = s.into();
         self
     }
-    pub fn flex_shrink(mut self, s: f32) -> Self {
-        self.flex_shrink = s.max(0.0);
+    pub fn shrink(mut self, s: f32) -> Self {
+        self.shrink = s.max(0.0);
         self
     }
-    pub fn flex_basis(mut self, b: FlexBasis) -> Self {
-        self.flex_basis = b;
-        self
-    }
-
     pub fn gap(mut self, gap: u16) -> Self {
         self.gap = gap;
         self
@@ -158,17 +149,6 @@ impl Style {
 
     pub fn resolve_justify_self(container: &Style, item: &Style) -> Align {
         item.justify_self.unwrap_or(container.justify_items)
-    }
-
-    pub fn resolve_flex_grow(item: &Style) -> f32 {
-        if item.flex_grow_set {
-            item.flex_grow
-        } else {
-            match item.flex_basis {
-                FlexBasis::Auto => 1.0,
-                FlexBasis::Length(_) => 0.0,
-            }
-        }
     }
 }
 

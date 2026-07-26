@@ -75,7 +75,6 @@ pub fn Frame<'a>() -> TuiNode<'a> {
                             &frame,
                             selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
                         )
-                        style={style!{ flex-basis: 1 }}
                     />
                 }
             </List>
