@@ -73,6 +73,43 @@ impl<'a> GridNode<'a> {
         self.style = style;
         self
     }
+
+    pub fn natural_size(&self, viewport: (u16, u16)) -> (u16, u16) {
+        let col_total = Self::track_total(&self.columns, viewport.0);
+        let row_total = Self::track_total(&self.rows, viewport.1);
+
+        let gap_x_total = self
+            .gap_x
+            .saturating_mul((self.columns.len() as u16).saturating_sub(1));
+        let gap_y_total = self
+            .gap_y
+            .saturating_mul((self.rows.len() as u16).saturating_sub(1));
+
+        let (pad_top, pad_right, pad_bottom, pad_left) = self.padding.amounts();
+
+        let width = col_total
+            .saturating_add(gap_x_total)
+            .saturating_add(pad_left)
+            .saturating_add(pad_right);
+        let height = row_total
+            .saturating_add(gap_y_total)
+            .saturating_add(pad_top)
+            .saturating_add(pad_bottom);
+
+        (width, height)
+    }
+
+    fn track_total(tracks: &[TrackSize], reference: u16) -> u16 {
+        let mut total: u32 = 0;
+        for track in tracks {
+            total += match track {
+                TrackSize::Length(n) => u32::from(*n),
+                TrackSize::Percent(p) => (u32::from(reference) * u32::from(*p)) / 100,
+                TrackSize::Fr(_) | TrackSize::Auto => 0,
+            };
+        }
+        total.min(u32::from(u16::MAX)) as u16
+    }
 }
 
 pub struct GridItemNode<'a> {

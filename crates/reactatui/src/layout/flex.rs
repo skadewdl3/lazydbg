@@ -53,6 +53,35 @@ impl<'a> FlexNode<'a> {
         self.style = style;
         self
     }
+
+    pub fn natural_size(&self, cross_axis_hint: u16) -> (u16, u16) {
+        let participating: Vec<&FlexItemNode<'_>> =
+            self.items.iter().filter(|it| !it.ignore).collect();
+
+        let gap_total = self
+            .gap
+            .saturating_mul((participating.len() as u16).saturating_sub(1));
+        let mut main: u32 = u32::from(gap_total);
+
+        for item in &participating {
+            main += match item.style.flex_basis {
+                FlexBasis::Length(n) => u32::from(n),
+                FlexBasis::Auto => 0,
+            };
+        }
+
+        let (pad_top, pad_right, pad_bottom, pad_left) = self.padding.amounts();
+        let main_pad = match self.direction {
+            Direction::Horizontal => pad_left.saturating_add(pad_right),
+            Direction::Vertical => pad_top.saturating_add(pad_bottom),
+        };
+        let main = (main.saturating_add(u32::from(main_pad))).min(u32::from(u16::MAX)) as u16;
+
+        match self.direction {
+            Direction::Horizontal => (main, cross_axis_hint),
+            Direction::Vertical => (cross_axis_hint, main),
+        }
+    }
 }
 
 pub struct FlexItemNode<'a> {

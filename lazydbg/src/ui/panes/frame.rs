@@ -8,7 +8,7 @@ use reactatui::{
     keybindings, tui,
 };
 use reactatui_macros::style;
-use reactatui_widgets::Block;
+use reactatui_widgets::{Block, Scroll};
 
 use crate::interface::backend::DbgFrame;
 
@@ -69,16 +69,18 @@ pub fn Frame<'a>() -> TuiNode<'a> {
 
     tui! {
         <Block::default title={"Stack Frame"} borders={Borders::ALL}>
-            <Flex direction={Direction::Vertical}>
-                for frame in frames.get() {
-                    <FrameItem(
-                            &frame,
-                            selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
-                        )
-                        style={style!{ flex-basis: 1 }}
-                    />
-                }
-            </Flex>
+            <Scroll(false)>
+                <Flex direction={Direction::Vertical}>
+                    for frame in frames.get() {
+                        <FrameItem(
+                                &frame,
+                                selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
+                            )
+                            style={style!{ flex-basis: 10 }}
+                        />
+                    }
+                </Flex>
+            </Scroll>
         </Block>
     }
 }
