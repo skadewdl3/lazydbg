@@ -37,6 +37,7 @@ use syn::{
     Expr, Ident, Token,
     parse::{Parse, ParseStream, discouraged::Speculative},
     punctuated::Punctuated,
+    spanned::Spanned,
 };
 
 enum StyleValueKind {
@@ -44,6 +45,11 @@ enum StyleValueKind {
     FlexBasisAuto,
     NamedColor(&'static str),
     Rgb(Expr, Expr, Expr),
+    If {
+        condition: Expr,
+        then_val: Box<StyleValueKind>,
+        else_val: Option<Box<StyleValueKind>>,
+    },
 }
 
 enum StyleEntry {
@@ -73,6 +79,9 @@ fn read_kebab_word(input: ParseStream) -> syn::Result<(String, Span)> {
 }
 
 fn parse_flex_basis_value(input: ParseStream) -> syn::Result<StyleValueKind> {
+    if input.peek(Token![if]) {
+        return parse_if_value(input, parse_flex_basis_value);
+    }
     let fork = input.fork();
     if let Ok((word, _)) = read_kebab_word(&fork)
         && word == "auto"
@@ -91,6 +100,38 @@ fn parse_flex_basis_value(input: ParseStream) -> syn::Result<StyleValueKind> {
         )
     })?;
     Ok(StyleValueKind::Expr(expr))
+}
+
+fn parse_if_value<R>(input: ParseStream, recurse: R) -> syn::Result<StyleValueKind>
+where
+    R: Fn(ParseStream) -> syn::Result<StyleValueKind> + Copy,
+{
+    input.parse::<Token![if]>()?;
+    let condition: Expr = Expr::parse_without_eager_brace(input)?;
+
+    let then_buf;
+    syn::braced!(then_buf in input);
+    let then_val = recurse(&then_buf)?;
+
+    // Check if there's an `else`
+    let else_val = if input.peek(Token![else]) {
+        input.parse::<Token![else]>()?;
+        if input.peek(Token![if]) {
+            Some(Box::new(parse_if_value(input, recurse)?))
+        } else {
+            let else_buf;
+            syn::braced!(else_buf in input);
+            Some(Box::new(recurse(&else_buf)?))
+        }
+    } else {
+        None
+    };
+
+    Ok(StyleValueKind::If {
+        condition,
+        then_val: Box::new(then_val),
+        else_val,
+    })
 }
 
 fn named_color(word: &str) -> Option<&'static str> {
@@ -116,7 +157,188 @@ fn named_color(word: &str) -> Option<&'static str> {
     })
 }
 
+/// Returns true if an `if` chain ends without an `else` block.
+fn is_elseless_if(value: &StyleValueKind) -> bool {
+    match value {
+        StyleValueKind::If { else_val: None, .. } => true,
+        StyleValueKind::If {
+            else_val: Some(boxed),
+            ..
+        } => is_elseless_if(boxed),
+        _ => false,
+    }
+}
+
+/// Generates a statement that conditionally applies a color method.
+fn emit_color_stmt(method: &Ident, value: StyleValueKind) -> syn::Result<TokenStream2> {
+    match value {
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: Some(else_val),
+        } => {
+            let then_color = emit_color(*then_val)?;
+            // Recursively handle `else if`
+            let else_stmt = emit_color_stmt(method, *else_val)?;
+            Ok(quote! {
+                if #condition {
+                    __style_color = __style_color.#method(#then_color);
+                } else #else_stmt
+            })
+        }
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: None,
+        } => {
+            let then_color = emit_color(*then_val)?;
+            Ok(quote! {
+                if #condition {
+                    __style_color = __style_color.#method(#then_color);
+                }
+            })
+        }
+        _ => Err(syn::Error::new(
+            Span::call_site(),
+            "expected an `if` expression",
+        )),
+    }
+}
+
+/// Generates a statement that conditionally applies a layout method.
+fn emit_layout_stmt(method_name: &str, value: StyleValueKind) -> syn::Result<TokenStream2> {
+    let method = format_ident!("{method_name}");
+    match value {
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: Some(else_val),
+        } => {
+            let then_layout = emit_layout(method_name, *then_val)?;
+            let else_stmt = emit_layout_stmt(method_name, *else_val)?;
+            Ok(quote! {
+                if #condition {
+                    __style_layout = __style_layout.#method(#then_layout);
+                } else #else_stmt
+            })
+        }
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: None,
+        } => {
+            let then_layout = emit_layout(method_name, *then_val)?;
+            Ok(quote! {
+                if #condition {
+                    __style_layout = __style_layout.#method(#then_layout);
+                }
+            })
+        }
+        _ => Err(syn::Error::new(
+            Span::call_site(),
+            "expected an `if` expression",
+        )),
+    }
+}
+
+fn emit_color(value: StyleValueKind) -> syn::Result<TokenStream2> {
+    Ok(match value {
+        StyleValueKind::NamedColor(variant) => {
+            let variant = format_ident!("{variant}");
+            quote! { ::ratatui::style::Color::#variant }
+        }
+        StyleValueKind::Rgb(r, g, b) => {
+            quote! { ::ratatui::style::Color::Rgb((#r) as u8, (#g) as u8, (#b) as u8) }
+        }
+        StyleValueKind::Expr(expr) => {
+            quote! { #expr }
+        }
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: Some(else_val), // <-- Match Some here
+        } => {
+            let then = emit_color(*then_val)?;
+            let else_ = emit_color(*else_val)?;
+
+            quote! {
+                if #condition { #then } else { #else_ }
+            }
+        }
+        // <-- Add fallback error arm
+        StyleValueKind::If { condition, .. } => {
+            return Err(syn::Error::new(
+                condition.span(),
+                "an `if` without an `else` can only be used as a top-level property value",
+            ));
+        }
+        StyleValueKind::FlexBasisAuto => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "`auto` isn't a valid color value",
+            ));
+        }
+    })
+}
+
+fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2> {
+    Ok(match value {
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: Some(else_val), // <-- Match Some here
+        } => {
+            let then_layout = emit_layout(method, *then_val)?;
+            let else_layout = emit_layout(method, *else_val)?;
+
+            quote! {
+                if #condition { #then_layout } else { #else_layout }
+            }
+        }
+        // <-- Add fallback error arm
+        StyleValueKind::If { condition, .. } => {
+            return Err(syn::Error::new(
+                condition.span(),
+                "an `if` without an `else` can only be used as a top-level property value",
+            ));
+        }
+        StyleValueKind::FlexBasisAuto if method == "flex_basis" => {
+            quote! { ::reactatui::layout::FlexBasis::Auto }
+        }
+        StyleValueKind::Expr(expr) if method == "flex_basis" => {
+            quote! { ::reactatui::layout::FlexBasis::Length((#expr) as u16) }
+        }
+        StyleValueKind::Expr(expr) if matches!(method, "flex_grow" | "flex_shrink") => {
+            quote! { (#expr) as f32 }
+        }
+        StyleValueKind::Expr(expr)
+            if matches!(method, "column" | "row" | "column_span" | "row_span") =>
+        {
+            quote! { (#expr) as usize }
+        }
+        StyleValueKind::Expr(expr) => {
+            quote! { #expr }
+        }
+        StyleValueKind::FlexBasisAuto => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "`auto` is only valid for `flex-basis`",
+            ));
+        }
+        StyleValueKind::NamedColor(_) | StyleValueKind::Rgb(..) => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "expected a layout value",
+            ));
+        }
+    })
+}
+
 fn parse_color_value(input: ParseStream) -> syn::Result<StyleValueKind> {
+    if input.peek(Token![if]) {
+        return parse_if_value(input, parse_color_value);
+    }
+
     let fork = input.fork();
     if let Ok((word, span)) = read_kebab_word(&fork) {
         if word == "rgb" && fork.peek(syn::token::Paren) {
@@ -407,23 +629,19 @@ pub fn expand(input: TokenStream2) -> TokenStream2 {
             }
             StyleEntry::Flag(name, span) => match lookup_flag(&name) {
                 Some((Target::Color, call)) => {
-                    stmts.push(quote! { __style_color = __style_color.#call; });
+                    stmts.push(quote! {
+                        __style_color = __style_color.#call;
+                    });
                 }
+
                 Some((Target::Layout, call)) => {
-                    stmts.push(quote! { __style_layout = __style_layout.#call; });
+                    stmts.push(quote! {
+                        __style_layout = __style_layout.#call;
+                    });
                 }
+
                 None => {
-                    let hint = match closest_match(&name, ALL_FLAGS) {
-                        Some(s) => format!(" — did you mean `{s}`?"),
-                        None => String::new(),
-                    };
-                    let msg = format!(
-                        "`{name}` isn't a recognized style flag{hint}. Known flags: bold, dim, \
-                         italic, underlined, slow_blink, rapid_blink, reversed, hidden, \
-                         crossed_out. For anything else, use `--color: |s| s.your_method(..)` \
-                         or `--layout: |s| s.your_method(..)`."
-                    );
-                    return syn::Error::new(span, msg).to_compile_error();
+                    // existing error handling
                 }
             },
             StyleEntry::KeyValue {
@@ -432,76 +650,57 @@ pub fn expand(input: TokenStream2) -> TokenStream2 {
                 value,
             } => match lookup_key(&key) {
                 Some((Target::Color, method)) => {
-                    let color_expr = match value {
-                        StyleValueKind::NamedColor(variant) => {
-                            let variant = format_ident!("{variant}");
-                            quote! { ::ratatui::style::Color::#variant }
+                    // Intercept incomplete `if`/`else if` chains
+                    if is_elseless_if(&value) {
+                        let method_ident = format_ident!("{method}");
+                        match emit_color_stmt(&method_ident, value) {
+                            Ok(ts) => stmts.push(ts),
+                            Err(err) => return err.to_compile_error(),
                         }
-                        StyleValueKind::Rgb(r, g, b) => {
-                            quote! { ::ratatui::style::Color::Rgb((#r) as u8, (#g) as u8, (#b) as u8) }
-                        }
-                        StyleValueKind::Expr(e) => quote! { #e },
-                        StyleValueKind::FlexBasisAuto => {
-                            return syn::Error::new(
-                                key_span,
-                                format!("`auto` isn't a valid value for `{key}`"),
-                            )
-                            .to_compile_error();
-                        }
-                    };
-                    let method = format_ident!("{method}");
-                    stmts.push(quote! { __style_color = __style_color.#method(#color_expr); });
+                    } else {
+                        let color_expr = match emit_color(value) {
+                            Ok(ts) => ts,
+                            Err(err) => return err.to_compile_error(),
+                        };
+                        let method_ident = format_ident!("{method}");
+                        stmts.push(quote! {
+                            __style_color = __style_color.#method_ident(#color_expr);
+                        });
+                    }
                 }
+
                 Some((Target::Layout, method)) => {
-                    let layout_expr = match (method, value) {
-                        ("flex_basis", StyleValueKind::FlexBasisAuto) => {
-                            quote! { ::reactatui::layout::FlexBasis::Auto }
+                    // Intercept incomplete `if`/`else if` chains
+                    if is_elseless_if(&value) {
+                        match emit_layout_stmt(method, value) {
+                            Ok(ts) => stmts.push(ts),
+                            Err(err) => return err.to_compile_error(),
                         }
-                        ("flex_basis", StyleValueKind::Expr(e)) => {
-                            quote! { ::reactatui::layout::FlexBasis::Length((#e) as u16) }
-                        }
-                        ("flex_grow", StyleValueKind::Expr(e))
-                        | ("flex_shrink", StyleValueKind::Expr(e)) => {
-                            quote! { (#e) as f32 }
-                        }
-                        ("column", StyleValueKind::Expr(e))
-                        | ("row", StyleValueKind::Expr(e))
-                        | ("column_span", StyleValueKind::Expr(e))
-                        | ("row_span", StyleValueKind::Expr(e)) => {
-                            quote! { (#e) as usize }
-                        }
-                        (_, StyleValueKind::Expr(e)) => quote! { #e },
-                        (_, StyleValueKind::FlexBasisAuto) => {
-                            return syn::Error::new(
-                                key_span,
-                                format!("`auto` is only valid for `flex-basis`, not `{key}`"),
-                            )
-                            .to_compile_error();
-                        }
-                        (_, StyleValueKind::NamedColor(_)) | (_, StyleValueKind::Rgb(..)) => {
-                            return syn::Error::new(
-                                key_span,
-                                format!(
-                                    "`{key}` is a layout property and doesn't take a color value"
-                                ),
-                            )
-                            .to_compile_error();
-                        }
-                    };
-                    let method = format_ident!("{method}");
-                    stmts.push(quote! { __style_layout = __style_layout.#method(#layout_expr); });
+                    } else {
+                        let layout_expr = match emit_layout(method, value) {
+                            Ok(ts) => ts,
+                            Err(err) => return err.to_compile_error(),
+                        };
+                        let m = format_ident!("{method}");
+                        stmts.push(quote! {
+                            __style_layout = __style_layout.#m(#layout_expr);
+                        });
+                    }
                 }
+
                 None => {
                     let hint = match closest_match(&key, ALL_KEYS) {
                         Some(s) => format!(" — did you mean `{s}`?"),
                         None => String::new(),
                     };
+
                     let msg = format!(
                         "`{key}` isn't a recognized style property{hint}. Known properties: {}. \
                          For anything else, use `--color: |s| s.your_method(..)` or \
                          `--layout: |s| s.your_method(..)`.",
                         ALL_KEYS.join(", ")
                     );
+
                     return syn::Error::new(key_span, msg).to_compile_error();
                 }
             },

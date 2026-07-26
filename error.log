@@ -1,0 +1,45 @@
+warning: lazydbg v0.1.0 (/home/skadewdl3/Projects/lazydbg/lazydbg) ignoring invalid dependency `remove` which is missing a lib target
+   Compiling reactatui-macros v0.1.0 (/home/skadewdl3/Projects/lazydbg/crates/reactatui-macros)
+warning: unused variable: `span`
+   --> crates/reactatui-macros/src/style.rs:519:36
+    |
+519 |             StyleEntry::Flag(name, span) => match lookup_flag(&name) {
+    |                                    ^^^^ help: if this is intentional, prefix it with an underscore: `_span`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `If` is never constructed
+  --> crates/reactatui-macros/src/style.rs:47:5
+   |
+42 | enum StyleValueKind {
+   |      -------------- variant in this enum
+...
+47 |     If {
+   |     ^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `ALL_FLAGS` is never used
+   --> crates/reactatui-macros/src/style.rs:461:7
+    |
+461 | const ALL_FLAGS: &[&str] = &[
+    |       ^^^^^^^^^
+
+warning: `reactatui-macros` (lib) generated 3 warnings (run `cargo fix --lib -p reactatui-macros` to apply 1 suggestion)
+   Compiling reactatui v0.1.0 (/home/skadewdl3/Projects/lazydbg/crates/reactatui)
+   Compiling reactatui-widgets v0.1.0 (/home/skadewdl3/Projects/lazydbg/crates/reactatui-widgets)
+   Compiling lazydbg v0.1.0 (/home/skadewdl3/Projects/lazydbg/lazydbg)
+error[E0425]: cannot find value `green` in this scope
+  --> lazydbg/src/ui/panes/frame.rs:28:33
+   |
+28 |         background: if active { green } else { reset }
+   |                                 ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `reset` in this scope
+  --> lazydbg/src/ui/panes/frame.rs:28:48
+   |
+28 |         background: if active { green } else { reset }
+   |                                                ^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `lazydbg` (bin "lazydbg") due to 2 previous errors

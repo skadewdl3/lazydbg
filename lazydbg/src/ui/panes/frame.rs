@@ -24,12 +24,16 @@ pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
 
     let thing = move |_| emitter.emit(());
 
+    let st = style! {
+        background: if active { green } else if 2 == 2 { blue };
+    };
+
     // Format the frame information
     let text = format!("#{} {} {} ({}:{})", level, addr, func, file, line);
 
     tui! {
         <Paragraph::new(text)
-            style={style!{ background: green }}
+            style={st}
             on:click={thing}
         />
     }
