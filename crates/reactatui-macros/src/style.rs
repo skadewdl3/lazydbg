@@ -703,6 +703,7 @@ fn lookup_flag(name: &str) -> Option<(Target, TokenStream2)> {
             Color,
             quote! { add_modifier(::ratatui::style::Modifier::CROSSED_OUT) },
         ),
+        "ignore" => (Layout, quote! { ignore() }),
         _ => return None,
     })
 }

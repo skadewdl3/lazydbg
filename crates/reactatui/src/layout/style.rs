@@ -21,9 +21,6 @@ pub enum Justify {
     SpaceEvenly,
 }
 
-/// Unified layout style, applied at both container and item level — same
-/// shape CSS uses (an element's `align-items` is a sibling concept to its
-/// own `align-self`). Irrelevant fields at a given level are just unused.
 #[derive(Debug, Clone, Copy)]
 pub struct Style {
     // ---- Container-level ----
@@ -35,12 +32,20 @@ pub struct Style {
     pub align_items: Align,
     /// Default column-axis alignment for children (grid only).
     pub justify_items: Align,
+    /// Container-level: gap between items. For Grid, this sets both the
+    /// column gap and row gap uniformly (there's no way to express
+    /// asymmetric gaps through `style!` — do that by hand if you ever need it).
+    pub gap: u16,
 
     // ---- Item-level ----
     /// Overrides the container's `align_items` for this item only.
     pub align_self: Option<Align>,
     /// Overrides the container's `justify_items` for this item only (grid only).
     pub justify_self: Option<Align>,
+    /// Item-level, Flex only: pulls this item out of normal flex flow
+    /// entirely — it renders on top, full area, and positions itself (e.g.
+    /// a `Dialog` centering within the space it's given). Grid ignores this.
+    pub ignore: bool,
 
     /// Size along the primary axis. Shared, single-name property across
     /// Flex and Grid:
@@ -56,8 +61,6 @@ pub struct Style {
     /// tracks never shrink below their resolved size, same as CSS Grid.
     pub shrink: f32,
 
-    pub gap: u16,
-
     /// Grid placement. `None` triggers CSS-grid-style auto-placement.
     pub column: Option<usize>,
     pub row: Option<usize>,
@@ -72,11 +75,12 @@ impl Default for Style {
             align_content: Justify::Start,
             align_items: Align::Stretch,
             justify_items: Align::Stretch,
+            gap: 0,
             align_self: None,
             justify_self: None,
+            ignore: false,
             size: Size::Auto,
             shrink: 1.0,
-            gap: 0,
             column: None,
             row: None,
             column_span: 1,
@@ -106,6 +110,10 @@ impl Style {
         self.justify_items = a;
         self
     }
+    pub fn gap(mut self, gap: u16) -> Self {
+        self.gap = gap;
+        self
+    }
     pub fn align_self(mut self, a: Align) -> Self {
         self.align_self = Some(a);
         self
@@ -114,16 +122,18 @@ impl Style {
         self.justify_self = Some(a);
         self
     }
+    /// Flag-style setter — presence means "ignore", same convention as
+    /// `bold`/`italic`/etc. in the `style!` macro.
+    pub fn ignore(mut self) -> Self {
+        self.ignore = true;
+        self
+    }
     pub fn size(mut self, s: impl Into<Size>) -> Self {
         self.size = s.into();
         self
     }
     pub fn shrink(mut self, s: f32) -> Self {
         self.shrink = s.max(0.0);
-        self
-    }
-    pub fn gap(mut self, gap: u16) -> Self {
-        self.gap = gap;
         self
     }
     pub fn column(mut self, c: usize) -> Self {

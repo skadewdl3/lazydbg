@@ -34,13 +34,13 @@ impl<'a> FlexNode<'a> {
         self
     }
 
-    pub fn gap(mut self, gap: u16) -> Self {
-        self.gap = gap;
+    pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
+        self.padding = padding.into();
         self
     }
 
-    pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
-        self.padding = padding.into();
+    fn gap(mut self, gap: u16) -> Self {
+        self.gap = gap;
         self
     }
 
@@ -60,8 +60,8 @@ impl<'a> FlexNode<'a> {
     /// convention Grid's auto-tracks use for the "guaranteed minimum"
     /// half of sizing.
     pub fn natural_size(&self, cross_axis_hint: u16) -> (u16, u16) {
-        let participating: Vec<&FlexItemNode<'_>> =
-            self.items.iter().filter(|it| !it.ignore).collect();
+        let (ignored, participating): (Vec<_>, Vec<_>) =
+            self.items.iter().partition(|item| item.style.ignore);
 
         let gap_total = self
             .gap
@@ -91,30 +91,20 @@ impl<'a> FlexNode<'a> {
 
 pub struct FlexItemNode<'a> {
     style: Style,
-    ignore: bool,
     node: TuiNode<'a>,
 }
 
 impl<'a> FlexItemNode<'a> {
     pub fn new(node: impl Into<TuiNode<'a>>) -> Self {
         let (style, node) = node.into().take_style();
-        Self {
-            style,
-            ignore: false,
-            node,
-        }
+        Self { style, node }
     }
 
     fn flatten_fragments(self) -> Vec<Self> {
-        let Self {
-            style,
-            ignore,
-            node,
-        } = self;
+        let Self { style, node } = self;
         match node {
             TuiNode::Styled(inner, s) => Self {
                 style: s,
-                ignore,
                 node: *inner,
             }
             .flatten_fragments(),
@@ -127,18 +117,13 @@ impl<'a> FlexItemNode<'a> {
                     };
                     Self {
                         style: child_style,
-                        ignore,
                         node: child_node,
                     }
                     .flatten_fragments()
                 })
                 .collect(),
             TuiNode::Empty => Vec::new(),
-            node => vec![Self {
-                style,
-                ignore,
-                node,
-            }],
+            node => vec![Self { style, node }],
         }
     }
 
@@ -150,15 +135,6 @@ impl<'a> FlexItemNode<'a> {
     /// shrink), and `align_self` (cross-axis override).
     pub fn style(mut self, style: impl Into<Style>) -> Self {
         self.style = style.into();
-        self
-    }
-
-    /// Removes this item from flex flow entirely — it renders on top,
-    /// full area, and positions itself (e.g. a `Dialog` centering within
-    /// the space it's given). Not a CSS concept per se, but the TUI
-    /// equivalent of `position: absolute` and needed for overlay patterns.
-    pub fn flex_ignore(mut self) -> Self {
-        self.ignore = true;
         self
     }
 }
@@ -210,7 +186,7 @@ impl<'a> Widget for FlexNode<'a> {
             .collect();
 
         let (ignored, participating): (Vec<_>, Vec<_>) =
-            items.into_iter().partition(|item| item.ignore);
+            items.into_iter().partition(|item| item.style.ignore);
 
         let count = participating.len();
 
@@ -239,32 +215,64 @@ impl<'a> Widget for FlexNode<'a> {
             let mut premeasured: Vec<Option<Measured<'a>>> = (0..count).map(|_| None).collect();
             let mut basis = vec![0u16; count];
             let mut grow = vec![0f32; count];
+            let mut is_auto = vec![false; count];
 
+            // Estimate a "fair share" of the remaining budget for Auto
+            // items *before* measuring any of them. Widgets with no real
+            // intrinsic size (e.g. bordered Blocks) always fill whatever
+            // rect they're probed with — measuring them against the full
+            // remaining budget makes every Auto item report a basis equal
+            // to that whole budget, forcing a shrink pass later whose
+            // blit then clips their trailing border off (it was only ever
+            // rendered at the oversized probe size). Probing at a fair
+            // share instead means the measured size already matches (or
+            // is very close to) the eventual post-shrink size, so no
+            // truncating blit is needed for the common case.
+            let mut known_basis_sum: u32 = 0;
+            let mut auto_count: u16 = 0;
             for i in 0..count {
                 match styles[i].size {
-                    Size::Length(n) => basis[i] = n,
+                    Size::Length(n) => {
+                        basis[i] = n;
+                        known_basis_sum += u32::from(n);
+                    }
                     Size::Percent(p) => {
-                        basis[i] = ((u32::from(available) * u32::from(p)) / 100) as u16
+                        let n = ((u32::from(available) * u32::from(p)) / 100) as u16;
+                        basis[i] = n;
+                        known_basis_sum += u32::from(n);
                     }
                     Size::Fr(f) => grow[i] = f as f32,
-                    Size::Auto => {}
+                    Size::Auto => {
+                        is_auto[i] = true;
+                        auto_count += 1;
+                    }
                 }
+            }
+            let fair_share = (u32::from(available).saturating_sub(known_basis_sum)
+                / u32::from(auto_count.max(1)))
+            .min(u32::from(u16::MAX)) as u16;
 
+            for i in 0..count {
                 let align = Style::resolve_align(&container_style, &styles[i]);
-                let needs_measure = matches!(styles[i].size, Size::Auto) || align != Align::Stretch;
+                let needs_measure = is_auto[i] || align != Align::Stretch;
 
                 if needs_measure {
                     let node = nodes[i].take().expect("node already taken");
+                    let main_probe = if is_auto[i] {
+                        fair_share.max(1)
+                    } else {
+                        basis[i]
+                    };
                     let probe = match direction {
                         Direction::Horizontal => {
-                            Rect::new(area.x, area.y, available, cross_available)
+                            Rect::new(area.x, area.y, main_probe, cross_available)
                         }
                         Direction::Vertical => {
-                            Rect::new(area.x, area.y, cross_available, available)
+                            Rect::new(area.x, area.y, cross_available, main_probe)
                         }
                     };
                     let measured = measure_node(node, probe);
-                    if matches!(styles[i].size, Size::Auto) {
+                    if is_auto[i] {
                         basis[i] = match direction {
                             Direction::Horizontal => measured.content_width,
                             Direction::Vertical => measured.content_height,

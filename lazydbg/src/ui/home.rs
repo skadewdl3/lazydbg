@@ -66,8 +66,8 @@ pub fn Home<'a>() -> TuiNode<'a> {
 
     tui! {
         <Flex direction={Direction::Vertical}>
-            <Flex direction={Direction::Horizontal} gap={1}>
-                <Flex direction={Direction::Vertical} gap={1}>
+            <Flex direction={Direction::Horizontal} style={style!{ gap: 1 }}>
+                <Flex direction={Direction::Vertical} style={style!{ gap: 1 }}>
                     <Status />
                     <Frame />
                     <Disassembly />
@@ -75,7 +75,7 @@ pub fn Home<'a>() -> TuiNode<'a> {
                 <Logs is_active={false} />
             </Flex>
             <Keybinds />
-            <Dialog::new flex_ignore visible={open.get()} width={"50%"}>
+            <Dialog::new visible={open.get()} width={"50%"}>
             <Input("Enter binary", open.get(), true) on:submit={submit_handler} />
             </Dialog>
         </Flex>

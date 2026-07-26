@@ -346,7 +346,39 @@ impl<'a> Widget for GridNode<'a> {
         let mut premeasured: Vec<Option<Measured<'a>>> = (0..nodes.len()).map(|_| None).collect();
         let mut auto_col_size = vec![0u16; col_count];
         let mut auto_row_size = vec![0u16; row_count];
-        let probe_area = Rect::new(area.x, area.y, area.width, area.height);
+
+        // Same reasoning as Flex: probe auto tracks at a fair-share
+        // estimate rather than the whole container, so widgets with no
+        // real intrinsic size (bordered Blocks) don't get measured far
+        // larger than their eventual cell and clipped when blitted in.
+        let auto_col_count = columns
+            .iter()
+            .filter(|c| matches!(c, Size::Auto))
+            .count()
+            .max(1) as u16;
+        let auto_row_count = rows
+            .iter()
+            .filter(|c| matches!(c, Size::Auto))
+            .count()
+            .max(1) as u16;
+        let known_col_total: u16 = columns
+            .iter()
+            .map(|c| match c {
+                Size::Length(n) => *n,
+                Size::Percent(p) => ((u32::from(available_w) * u32::from(*p)) / 100) as u16,
+                Size::Fr(_) | Size::Auto => 0,
+            })
+            .sum();
+        let known_row_total: u16 = rows
+            .iter()
+            .map(|r| match r {
+                Size::Length(n) => *n,
+                Size::Percent(p) => ((u32::from(available_h) * u32::from(*p)) / 100) as u16,
+                Size::Fr(_) | Size::Auto => 0,
+            })
+            .sum();
+        let fair_col_w = available_w.saturating_sub(known_col_total) / auto_col_count;
+        let fair_row_h = available_h.saturating_sub(known_row_total) / auto_row_count;
 
         for (i, ((col, row), style)) in placements.iter().zip(styles.iter()).enumerate() {
             let col_span = style.column_span.max(1);
@@ -377,7 +409,18 @@ impl<'a> Widget for GridNode<'a> {
 
             if needs_measure {
                 let node = nodes[i].take().expect("node already taken");
-                let measured = measure_node(node, probe_area);
+                let probe_w = if in_auto_col && col_hint.is_none() {
+                    fair_col_w.max(1)
+                } else {
+                    available_w
+                };
+                let probe_h = if in_auto_row && row_hint.is_none() {
+                    fair_row_h.max(1)
+                } else {
+                    available_h
+                };
+                let probe = Rect::new(area.x, area.y, probe_w, probe_h);
+                let measured = measure_node(node, probe);
                 if in_auto_col && col_hint.is_none() {
                     auto_col_size[*col] = auto_col_size[*col].max(measured.content_width);
                 }

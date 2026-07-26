@@ -90,9 +90,6 @@ fn gen_flex(element: &Element) -> TokenStream2 {
             Prop::Named { name, value } if name == "direction" => {
                 flex = quote! { #flex.direction(#value) };
             }
-            Prop::Named { name, value } if name == "gap" => {
-                flex = quote! { #flex.gap(#value) };
-            }
             Prop::Named { name, value } if name == "padding" => {
                 flex = quote! { #flex.padding(#value) };
             }
@@ -131,9 +128,6 @@ fn gen_grid(element: &Element) -> TokenStream2 {
                 grid = quote! { #grid.columns(#value) }
             }
             Prop::Named { name, value } if name == "rows" => grid = quote! { #grid.rows(#value) },
-            Prop::Named { name, value } if name == "gap" => grid = quote! { #grid.gap(#value) },
-            Prop::Named { name, value } if name == "gap_x" => grid = quote! { #grid.gap_x(#value) },
-            Prop::Named { name, value } if name == "gap_y" => grid = quote! { #grid.gap_y(#value) },
             Prop::Named { name, value } if name == "padding" => {
                 grid = quote! { #grid.padding(#value) }
             }
@@ -156,9 +150,6 @@ fn gen_grid(element: &Element) -> TokenStream2 {
 fn gen_flex_item(element: &Element) -> TokenStream2 {
     let node = gen_element_without_flex(element);
     let mut item = quote! { ::reactatui::FlexItemNode::new(#node) };
-    if has_boolean_prop(&element.props, "flex_ignore") {
-        item = quote! { #item.flex_ignore() };
-    }
     if let Some(style) = named_prop(&element.props, "style") {
         item = quote! {
             #item.style(::core::convert::Into::<::reactatui::layout::Style>::into(#style))
@@ -320,7 +311,7 @@ fn gen_element_without_flex(element: &Element) -> TokenStream2 {
     clone.props.retain(|prop| match prop {
         Prop::Named { name, .. } | Prop::Boolean(name) => {
             let name = name.to_string();
-            let strip_item_only = matches!(name.as_str(), "flex_ignore" | "min" | "max");
+            let strip_item_only = matches!(name.as_str(), "min" | "max");
             let strip_style = name == "style" && !is_nested_container;
             !(strip_item_only || strip_style)
         }
@@ -436,7 +427,6 @@ fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
             Prop::Named { name, value } => {
                 widget = quote! { #widget.#name(#value) };
             }
-            Prop::Boolean(name) if name == "flex_ignore" => {}
             Prop::Boolean(name) => {
                 widget = quote! { #widget.#name(true) };
             }
@@ -499,9 +489,6 @@ fn gen_custom_component(element: &Element) -> TokenStream2 {
                 .iter()
                 .filter_map(|prop| match prop {
                     Prop::Named { name, value } if name != "children" => Some(quote! { #value }),
-                    Prop::Named { name, value } if name != "children" && name != "flex_ignore" => {
-                        Some(quote! { #value })
-                    }
                     Prop::Boolean(_) | Prop::Spread(_) | Prop::Event { .. } => None,
                     _ => None,
                 })
@@ -556,10 +543,4 @@ fn named_prop(props: &[Prop], expected: &str) -> Option<TokenStream2> {
         Prop::Named { name, value } if name == expected => Some(value.clone()),
         _ => None,
     })
-}
-
-fn has_boolean_prop(props: &[Prop], expected: &str) -> bool {
-    props
-        .iter()
-        .any(|prop| matches!(prop, Prop::Boolean(name) if name == expected))
 }
