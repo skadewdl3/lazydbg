@@ -10,31 +10,31 @@
 /// Produced by the `style!` macro. See the module docs.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CombinedStyle {
-    pub color: ratatui::style::Style,
-    pub layout: crate::layout::Style,
+    pub base: ratatui::style::Style,
+    pub reactatui: crate::layout::Style,
 }
 
 impl CombinedStyle {
     /// Explicit accessor for contexts where `Into`'s target type can't be
     /// inferred (e.g. storing into a `let` with no type annotation).
-    pub fn color(self) -> ratatui::style::Style {
-        self.color
+    pub fn base(self) -> ratatui::style::Style {
+        self.base
     }
 
     /// Explicit accessor, layout half.
-    pub fn layout(self) -> crate::layout::Style {
-        self.layout
+    pub fn reactatui(self) -> crate::layout::Style {
+        self.reactatui
     }
 }
 
 impl From<CombinedStyle> for ratatui::style::Style {
     fn from(c: CombinedStyle) -> Self {
-        c.color
+        c.base
     }
 }
 
 impl From<CombinedStyle> for crate::layout::Style {
     fn from(c: CombinedStyle) -> Self {
-        c.layout
+        c.reactatui
     }
 }

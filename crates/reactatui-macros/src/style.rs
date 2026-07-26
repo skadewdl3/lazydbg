@@ -12,6 +12,18 @@
 //!     flex-grow: 1;
 //!     bold;
 //!
+//!     // conditional flags — `else if` and `else` are both optional
+//!     if cond { bold } else if cond2 { italic } else { underlined };
+//!
+//!     // conditional blocks may contain any number of entries
+//!     // (semicolons are optional inside braces):
+//!     if cond {
+//!         background: green
+//!         if cond2 {
+//!             bold
+//!         }
+//!     }
+//!
 //!     // escape hatch: anything not covered above, applied as a closure
 //!     // over the accumulated value. Never blocked on this file being
 //!     // updated to know about a new ratatui/reactatui builder method.
@@ -40,11 +52,20 @@ use syn::{
     spanned::Spanned,
 };
 
+// ---------------------------------------------------------------------------
+//  Data types
+// ---------------------------------------------------------------------------
+
+/// A single value that can appear after `property:` — either a plain
+/// expression, a color, a flex-basis keyword, a flag, or a single-value
+/// `if` chain (used for `color: if cond { red } else { blue }`).
 enum StyleValueKind {
     Expr(Expr),
     FlexBasisAuto,
     NamedColor(&'static str),
     Rgb(Expr, Expr, Expr),
+    #[allow(dead_code)]
+    Flag(String, Span),
     If {
         condition: Expr,
         then_val: Box<StyleValueKind>,
@@ -52,8 +73,26 @@ enum StyleValueKind {
     },
 }
 
+/// An `if` block that appears as a top-level entry (or nested inside
+/// another `if` block).  Unlike `StyleValueKind::If`, which holds a
+/// single value, an `IfBlock` holds a *list* of `StyleEntry`s, allowing
+/// multiple properties / flags / nested ifs inside one conditional.
+struct IfBlock {
+    condition: Expr,
+    then_entries: Vec<StyleEntry>,
+    else_block: Option<Box<ElseBlock>>,
+}
+
+/// The right-hand side of an `else` keyword — either another `if` chain
+/// (`else if …`) or a brace-delimited list of entries (`else { … }`).
+enum ElseBlock {
+    If(IfBlock),
+    Entries(Vec<StyleEntry>),
+}
+
 enum StyleEntry {
     Flag(String, Span),
+    IfBlock(IfBlock),
     KeyValue {
         key: String,
         key_span: Span,
@@ -62,6 +101,10 @@ enum StyleEntry {
     EscapeColor(Expr),
     EscapeLayout(Expr),
 }
+
+// ---------------------------------------------------------------------------
+//  Small parsing helpers
+// ---------------------------------------------------------------------------
 
 /// Reads one `word` or `hyphen-joined-word` sequence (e.g. `flex`,
 /// `dark-gray`, `flex-basis`) starting at the current position.
@@ -77,6 +120,10 @@ fn read_kebab_word(input: ParseStream) -> syn::Result<(String, Span)> {
     }
     Ok((word, span))
 }
+
+// ---------------------------------------------------------------------------
+//  Single-value `if` parser (for property values like `color: if …`)
+// ---------------------------------------------------------------------------
 
 fn parse_flex_basis_value(input: ParseStream) -> syn::Result<StyleValueKind> {
     if input.peek(Token![if]) {
@@ -134,6 +181,62 @@ where
     })
 }
 
+// ---------------------------------------------------------------------------
+//  Block-level `if` parser (for top-level / nested conditional blocks)
+// ---------------------------------------------------------------------------
+
+/// Parse a semicolon-optional, brace-delimited list of `StyleEntry`s.
+///
+/// Inside `if { … }` blocks semicolons between entries are permitted
+/// but not required, matching the CSS-like feel of the macro.
+fn parse_entry_block(input: ParseStream) -> syn::Result<Vec<StyleEntry>> {
+    let mut entries = Vec::new();
+    while !input.is_empty() {
+        // Skip optional semicolons between / before / after entries.
+        if input.peek(Token![;]) {
+            input.parse::<Token![;]>()?;
+            continue;
+        }
+        let entry: StyleEntry = input.parse()?;
+        entries.push(entry);
+    }
+    Ok(entries)
+}
+
+/// Parse an `if <cond> { … } else if <cond2> { … } else { … }` chain
+/// whose brace-delimited blocks contain zero or more `StyleEntry`s.
+fn parse_block_if(input: ParseStream) -> syn::Result<IfBlock> {
+    input.parse::<Token![if]>()?;
+    let condition: Expr = Expr::parse_without_eager_brace(input)?;
+
+    let then_buf;
+    syn::braced!(then_buf in input);
+    let then_entries = parse_entry_block(&then_buf)?;
+
+    let else_block = if input.peek(Token![else]) {
+        input.parse::<Token![else]>()?;
+        if input.peek(Token![if]) {
+            Some(Box::new(ElseBlock::If(parse_block_if(input)?)))
+        } else {
+            let else_buf;
+            syn::braced!(else_buf in input);
+            Some(Box::new(ElseBlock::Entries(parse_entry_block(&else_buf)?)))
+        }
+    } else {
+        None
+    };
+
+    Ok(IfBlock {
+        condition,
+        then_entries,
+        else_block,
+    })
+}
+
+// ---------------------------------------------------------------------------
+//  Color name lookup
+// ---------------------------------------------------------------------------
+
 fn named_color(word: &str) -> Option<&'static str> {
     Some(match word {
         "reset" => "Reset",
@@ -156,6 +259,10 @@ fn named_color(word: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+// ---------------------------------------------------------------------------
+//  Emission helpers — single-value `if` (property values)
+// ---------------------------------------------------------------------------
 
 /// Returns true if an `if` chain ends without an `else` block.
 fn is_elseless_if(value: &StyleValueKind) -> bool {
@@ -256,7 +363,7 @@ fn emit_color(value: StyleValueKind) -> syn::Result<TokenStream2> {
         StyleValueKind::If {
             condition,
             then_val,
-            else_val: Some(else_val), // <-- Match Some here
+            else_val: Some(else_val),
         } => {
             let then = emit_color(*then_val)?;
             let else_ = emit_color(*else_val)?;
@@ -265,7 +372,6 @@ fn emit_color(value: StyleValueKind) -> syn::Result<TokenStream2> {
                 if #condition { #then } else { #else_ }
             }
         }
-        // <-- Add fallback error arm
         StyleValueKind::If { condition, .. } => {
             return Err(syn::Error::new(
                 condition.span(),
@@ -278,6 +384,16 @@ fn emit_color(value: StyleValueKind) -> syn::Result<TokenStream2> {
                 "`auto` isn't a valid color value",
             ));
         }
+
+        StyleValueKind::Flag(name, span) => {
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "`{name}` is a style flag, not a color — use it as a bare \
+                     entry or inside an `if {{ ... }}` chain, not as a color value"
+                ),
+            ));
+        }
     })
 }
 
@@ -286,7 +402,7 @@ fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2>
         StyleValueKind::If {
             condition,
             then_val,
-            else_val: Some(else_val), // <-- Match Some here
+            else_val: Some(else_val),
         } => {
             let then_layout = emit_layout(method, *then_val)?;
             let else_layout = emit_layout(method, *else_val)?;
@@ -295,7 +411,6 @@ fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2>
                 if #condition { #then_layout } else { #else_layout }
             }
         }
-        // <-- Add fallback error arm
         StyleValueKind::If { condition, .. } => {
             return Err(syn::Error::new(
                 condition.span(),
@@ -329,6 +444,16 @@ fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2>
             return Err(syn::Error::new(
                 Span::call_site(),
                 "expected a layout value",
+            ));
+        }
+
+        StyleValueKind::Flag(name, span) => {
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "`{name}` is a style flag, not a layout value — use it as a \
+                     bare entry or inside an `if {{ ... }}` chain"
+                ),
             ));
         }
     })
@@ -379,6 +504,10 @@ fn parse_color_value(input: ParseStream) -> syn::Result<StyleValueKind> {
     Ok(StyleValueKind::Expr(expr))
 }
 
+// ---------------------------------------------------------------------------
+//  Parse impl for StyleEntry
+// ---------------------------------------------------------------------------
+
 impl Parse for StyleEntry {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // `--color: |s| ...` / `--layout: |s| ...` escape hatch.
@@ -410,6 +539,12 @@ impl Parse for StyleEntry {
                 "unexpected `-` — style properties don't start with a minus sign; did you \
                  mean an escape hatch like `--color: |s| ...`?",
             ));
+        }
+
+        // Block-level `if` — may contain multiple entries inside braces.
+        if input.peek(Token![if]) {
+            let block_if = parse_block_if(input)?;
+            return Ok(StyleEntry::IfBlock(block_if));
         }
 
         let (raw_key, key_span) = read_kebab_word(input).map_err(|_| {
@@ -451,6 +586,10 @@ impl Parse for StyleEntry {
     }
 }
 
+// ---------------------------------------------------------------------------
+//  Top-level input
+// ---------------------------------------------------------------------------
+
 struct StyleInput {
     entries: Punctuated<StyleEntry, Token![;]>,
 }
@@ -463,6 +602,10 @@ impl Parse for StyleInput {
     }
 }
 
+// ---------------------------------------------------------------------------
+//  Lookup tables
+// ---------------------------------------------------------------------------
+
 #[derive(Clone, Copy)]
 enum Target {
     Color,
@@ -470,8 +613,6 @@ enum Target {
 }
 
 /// Shorthand key -> (which half of `CombinedStyle`, builder method name).
-/// Keys here are canonical snake_case; hyphenated user input is normalized
-/// to this form before lookup.
 fn lookup_key(name: &str) -> Option<(Target, &'static str)> {
     use Target::*;
     Some(match name {
@@ -500,8 +641,6 @@ fn lookup_key(name: &str) -> Option<(Target, &'static str)> {
     })
 }
 
-/// Display form (kebab-case) of every known property, used only for the
-/// "did you mean" suggestion and the full list in error messages.
 const ALL_KEYS: &[&str] = &[
     "fg",
     "color",
@@ -541,7 +680,7 @@ fn lookup_flag(name: &str) -> Option<(Target, TokenStream2)> {
             Color,
             quote! { add_modifier(::ratatui::style::Modifier::ITALIC) },
         ),
-        "underlined" => (
+        "underlined" | "underline" => (
             Color,
             quote! { add_modifier(::ratatui::style::Modifier::UNDERLINED) },
         ),
@@ -569,17 +708,9 @@ fn lookup_flag(name: &str) -> Option<(Target, TokenStream2)> {
     })
 }
 
-const ALL_FLAGS: &[&str] = &[
-    "bold",
-    "dim",
-    "italic",
-    "underlined",
-    "slow_blink",
-    "rapid_blink",
-    "reversed",
-    "hidden",
-    "crossed_out",
-];
+// ---------------------------------------------------------------------------
+//  Fuzzy matching for error messages
+// ---------------------------------------------------------------------------
 
 fn levenshtein(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
@@ -611,6 +742,139 @@ fn closest_match<'a>(name: &str, candidates: &[&'a str]) -> Option<&'a str> {
         .map(|(c, _)| c)
 }
 
+// ---------------------------------------------------------------------------
+//  Emission — convert StyleEntry / IfBlock into TokenStream2 statements
+// ---------------------------------------------------------------------------
+
+/// Convert a single `StyleEntry` into zero or more statements.
+///
+/// This is the shared core used both at the top level and inside
+/// conditional `if { … }` blocks.
+fn emit_entry(entry: StyleEntry) -> syn::Result<Vec<TokenStream2>> {
+    let mut stmts = Vec::new();
+    match entry {
+        StyleEntry::EscapeColor(expr) => {
+            stmts.push(quote! { __style_color = (#expr)(__style_color); });
+        }
+        StyleEntry::EscapeLayout(expr) => {
+            stmts.push(quote! { __style_layout = (#expr)(__style_layout); });
+        }
+        StyleEntry::IfBlock(block_if) => {
+            stmts.push(emit_block_if(block_if)?);
+        }
+        StyleEntry::Flag(name, span) => match lookup_flag(&name) {
+            Some((Target::Color, call)) => {
+                stmts.push(quote! {
+                    __style_color = __style_color.#call;
+                });
+            }
+            Some((Target::Layout, call)) => {
+                stmts.push(quote! {
+                    __style_layout = __style_layout.#call;
+                });
+            }
+            None => {
+                return Err(syn::Error::new(
+                    span,
+                    format!(
+                        "`{name}` isn't a recognized style flag. Known flags: \
+                         bold, dim, italic, underlined, slow_blink, rapid_blink, \
+                         reversed, hidden, crossed_out. For other properties, use \
+                         the `property: value;` form."
+                    ),
+                ));
+            }
+        },
+        StyleEntry::KeyValue {
+            key,
+            key_span,
+            value,
+        } => match lookup_key(&key) {
+            Some((Target::Color, method)) => {
+                if is_elseless_if(&value) {
+                    let method_ident = format_ident!("{method}");
+                    stmts.push(emit_color_stmt(&method_ident, value)?);
+                } else {
+                    let color_expr = emit_color(value)?;
+                    let method_ident = format_ident!("{method}");
+                    stmts.push(quote! {
+                        __style_color = __style_color.#method_ident(#color_expr);
+                    });
+                }
+            }
+            Some((Target::Layout, method)) => {
+                if is_elseless_if(&value) {
+                    stmts.push(emit_layout_stmt(method, value)?);
+                } else {
+                    let layout_expr = emit_layout(method, value)?;
+                    let m = format_ident!("{method}");
+                    stmts.push(quote! {
+                        __style_layout = __style_layout.#m(#layout_expr);
+                    });
+                }
+            }
+            None => {
+                let hint = match closest_match(&key, ALL_KEYS) {
+                    Some(s) => format!(" — did you mean `{s}`?"),
+                    None => String::new(),
+                };
+
+                let msg = format!(
+                    "`{key}` isn't a recognized style property{hint}. Known properties: {}. \
+                     For anything else, use `--color: |s| s.your_method(..)` or \
+                     `--layout: |s| s.your_method(..)`.",
+                    ALL_KEYS.join(", ")
+                );
+
+                return Err(syn::Error::new(key_span, msg));
+            }
+        },
+    }
+    Ok(stmts)
+}
+
+/// Flatten a list of entries into a flat list of statements.
+fn emit_entries(entries: Vec<StyleEntry>) -> syn::Result<Vec<TokenStream2>> {
+    let mut all = Vec::new();
+    for entry in entries {
+        all.extend(emit_entry(entry)?);
+    }
+    Ok(all)
+}
+
+/// Emit an `else` branch — either `else if … { … } …` or `else { … }`.
+fn emit_else_block(else_block: ElseBlock) -> syn::Result<TokenStream2> {
+    match else_block {
+        ElseBlock::If(block_if) => emit_block_if(block_if),
+        ElseBlock::Entries(entries) => {
+            let stmts = emit_entries(entries)?;
+            Ok(quote! { { #(#stmts)* } })
+        }
+    }
+}
+
+/// Emit a full `if <cond> { … } else …` statement from an `IfBlock`.
+fn emit_block_if(block_if: IfBlock) -> syn::Result<TokenStream2> {
+    let condition = block_if.condition;
+    let then_stmts = emit_entries(block_if.then_entries)?;
+    let else_tokens = match block_if.else_block {
+        None => TokenStream2::new(),
+        Some(boxed) => {
+            let else_inner = emit_else_block(*boxed)?;
+            quote! { else #else_inner }
+        }
+    };
+    Ok(quote! {
+        if #condition {
+            #(#then_stmts)*
+        } #else_tokens
+    })
+}
+
+// ---------------------------------------------------------------------------
+//  Public entry point
+// ---------------------------------------------------------------------------
+
 pub fn expand(input: TokenStream2) -> TokenStream2 {
     let parsed: StyleInput = match syn::parse2(input) {
         Ok(p) => p,
@@ -618,92 +882,10 @@ pub fn expand(input: TokenStream2) -> TokenStream2 {
     };
 
     let mut stmts = Vec::new();
-
     for entry in parsed.entries {
-        match entry {
-            StyleEntry::EscapeColor(expr) => {
-                stmts.push(quote! { __style_color = (#expr)(__style_color); });
-            }
-            StyleEntry::EscapeLayout(expr) => {
-                stmts.push(quote! { __style_layout = (#expr)(__style_layout); });
-            }
-            StyleEntry::Flag(name, span) => match lookup_flag(&name) {
-                Some((Target::Color, call)) => {
-                    stmts.push(quote! {
-                        __style_color = __style_color.#call;
-                    });
-                }
-
-                Some((Target::Layout, call)) => {
-                    stmts.push(quote! {
-                        __style_layout = __style_layout.#call;
-                    });
-                }
-
-                None => {
-                    // existing error handling
-                }
-            },
-            StyleEntry::KeyValue {
-                key,
-                key_span,
-                value,
-            } => match lookup_key(&key) {
-                Some((Target::Color, method)) => {
-                    // Intercept incomplete `if`/`else if` chains
-                    if is_elseless_if(&value) {
-                        let method_ident = format_ident!("{method}");
-                        match emit_color_stmt(&method_ident, value) {
-                            Ok(ts) => stmts.push(ts),
-                            Err(err) => return err.to_compile_error(),
-                        }
-                    } else {
-                        let color_expr = match emit_color(value) {
-                            Ok(ts) => ts,
-                            Err(err) => return err.to_compile_error(),
-                        };
-                        let method_ident = format_ident!("{method}");
-                        stmts.push(quote! {
-                            __style_color = __style_color.#method_ident(#color_expr);
-                        });
-                    }
-                }
-
-                Some((Target::Layout, method)) => {
-                    // Intercept incomplete `if`/`else if` chains
-                    if is_elseless_if(&value) {
-                        match emit_layout_stmt(method, value) {
-                            Ok(ts) => stmts.push(ts),
-                            Err(err) => return err.to_compile_error(),
-                        }
-                    } else {
-                        let layout_expr = match emit_layout(method, value) {
-                            Ok(ts) => ts,
-                            Err(err) => return err.to_compile_error(),
-                        };
-                        let m = format_ident!("{method}");
-                        stmts.push(quote! {
-                            __style_layout = __style_layout.#m(#layout_expr);
-                        });
-                    }
-                }
-
-                None => {
-                    let hint = match closest_match(&key, ALL_KEYS) {
-                        Some(s) => format!(" — did you mean `{s}`?"),
-                        None => String::new(),
-                    };
-
-                    let msg = format!(
-                        "`{key}` isn't a recognized style property{hint}. Known properties: {}. \
-                         For anything else, use `--color: |s| s.your_method(..)` or \
-                         `--layout: |s| s.your_method(..)`.",
-                        ALL_KEYS.join(", ")
-                    );
-
-                    return syn::Error::new(key_span, msg).to_compile_error();
-                }
-            },
+        match emit_entry(entry) {
+            Ok(entry_stmts) => stmts.extend(entry_stmts),
+            Err(err) => return err.to_compile_error(),
         }
     }
 
@@ -712,8 +894,8 @@ pub fn expand(input: TokenStream2) -> TokenStream2 {
         let mut __style_layout = ::reactatui::layout::Style::default();
         #(#stmts)*
         ::reactatui::style::CombinedStyle {
-            color: __style_color,
-            layout: __style_layout,
+            base: __style_color,
+            reactatui: __style_layout,
         }
     }}
 }

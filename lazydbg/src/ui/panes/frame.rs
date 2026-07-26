@@ -25,7 +25,10 @@ pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
     let thing = move |_| emitter.emit(());
 
     let st = style! {
-        background: if active { green } else if 2 == 2 { blue };
+        if active {
+            background: green;
+            bold;
+        }
     };
 
     // Format the frame information
