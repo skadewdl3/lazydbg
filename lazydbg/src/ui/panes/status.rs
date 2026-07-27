@@ -1,9 +1,5 @@
 use ratatui::widgets::{Borders, Paragraph};
-use reactatui::{
-    TuiNode, component,
-    hooks::{use_global, use_memo},
-    tui,
-};
+use reactatui::{TuiNode, component, hooks::use_global, tui};
 use reactatui_widgets::Block;
 
 use crate::interface::DbgSession;

@@ -37,9 +37,16 @@ pub fn measure_node<'a>(node: TuiNode<'a>, probe_area: Rect) -> Measured<'a> {
     let mut max_y = probe_area.y;
     let mut has_content = false;
 
+    let default_cell = ratatui::buffer::Cell::default();
+
     for y in probe_area.y..probe_area.y + probe_area.height {
         for x in probe_area.x..probe_area.x + probe_area.width {
-            if scratch[(x, y)].symbol() != " " {
+            let cell = &scratch[(x, y)];
+            if cell.symbol() != " "
+                || cell.fg != default_cell.fg
+                || cell.bg != default_cell.bg
+                || cell.modifier != default_cell.modifier
+            {
                 has_content = true;
                 min_x = min_x.min(x);
                 min_y = min_y.min(y);
@@ -66,13 +73,13 @@ pub fn measure_node<'a>(node: TuiNode<'a>, probe_area: Rect) -> Measured<'a> {
     }
 }
 
-/// Blit a measured node's content into `target`, clipped to whichever of
-/// `target`/measured content is smaller. `target` should already be
+/// Blit a measured node's content into `target`, clipped to `target` area
+/// bounded by `measured.probe_area`. `target` should already be
 /// positioned/sized the way you want the content to land (e.g. via
 /// `layout::style::align_rect`) — this function does no alignment itself.
 pub fn blit_measured(measured: &Measured<'_>, target: Rect, buf: &mut Buffer) {
-    let copy_w = target.width.min(measured.content_width);
-    let copy_h = target.height.min(measured.content_height);
+    let copy_w = target.width.min(measured.probe_area.width);
+    let copy_h = target.height.min(measured.probe_area.height);
     let (src_x, src_y) = (measured.probe_area.x, measured.probe_area.y);
 
     for y in 0..copy_h {

@@ -1,8 +1,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Direction, Rect};
 use ratatui::widgets::{Paragraph, Widget};
-use reactatui::hooks::{register_mouse_region, use_key, use_state};
-use reactatui::keybindings;
+use reactatui::hooks::{register_mouse_region, use_state};
 use reactatui::layout::Size;
 use reactatui::measure::{Measured, blit_measured, measure_node};
 use reactatui::prelude::*;
@@ -148,4 +147,55 @@ fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
             row = row.saturating_add(height);
         }
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+
+    #[test]
+    fn test_list_non_virtualized_and_virtualized_items_fill_full_width() {
+        reactatui::hooks::begin_frame();
+
+        let area = Rect::new(0, 0, 50, 4);
+
+        // Styled item short text "Short" but background green across 50 cols
+        let create_item = || {
+            let p = Paragraph::new("Short").style(ratatui::style::Style::default().bg(Color::Green));
+            TuiNode::from_widget(p).style(reactatui::layout::Style::default().size(Size::Length(1)))
+        };
+
+        // 1) Non-virtualized list
+        let list_non_virt = List(false, vec![create_item(), create_item()]);
+        let mut buf_non_virt = Buffer::empty(area);
+        list_non_virt.render(area, &mut buf_non_virt);
+
+        // Every column in line 0 should be styled Green
+        for x in 0..50 {
+            assert_eq!(
+                buf_non_virt[(x, 0)].bg,
+                Color::Green,
+                "Non-virtualized List item cell at x={} should be Green",
+                x
+            );
+        }
+
+        reactatui::hooks::begin_frame();
+
+        // 2) Virtualized list
+        let list_virt = List(true, vec![create_item(), create_item()]);
+        let mut buf_virt = Buffer::empty(area);
+        list_virt.render(area, &mut buf_virt);
+
+        // Every column in line 0 should be styled Green
+        for x in 0..50 {
+            assert_eq!(
+                buf_virt[(x, 0)].bg,
+                Color::Green,
+                "Virtualized List item cell at x={} should be Green",
+                x
+            );
+        }
+    }
 }

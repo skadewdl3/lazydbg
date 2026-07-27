@@ -65,10 +65,10 @@ impl<'a> GridNode<'a> {
     pub fn style(mut self, style: impl Into<Style>) -> Self {
         let style = style.into();
         if let Some(cols) = &style.columns {
-            self.columns = cols.clone();
+            self.columns = cols.to_vec()
         }
         if let Some(rows) = &style.rows {
-            self.rows = rows.clone();
+            self.rows = rows.to_vec()
         }
         if let Some(gx) = style.gap_x {
             self.gap_x = gx;
@@ -150,7 +150,7 @@ impl<'a> GridItemNode<'a> {
         let Self { style, node } = self;
         match node {
             TuiNode::Styled(inner, s) => Self {
-                style: s,
+                style: style.merge(&s),
                 node: *inner,
             }
             .flatten_fragments(),
@@ -158,7 +158,7 @@ impl<'a> GridItemNode<'a> {
                 .into_iter()
                 .flat_map(|child| {
                     let (child_style, child_node) = match child {
-                        TuiNode::Styled(inner, s) => (s, *inner),
+                        TuiNode::Styled(inner, s) => (style.merge(&s), *inner),
                         other => (style.clone(), other),
                     };
                     Self {

@@ -92,7 +92,12 @@ impl<'a> FlexNode<'a> {
         for item in &participating {
             main += match item.style.size {
                 Size::Length(n) => u32::from(n),
-                Size::Percent(_) | Size::Fr(_) | Size::Auto => 0,
+                Size::Percent(p) => (u32::from(cross_axis_hint) * u32::from(p)) / 100,
+                Size::Fr(_) => 1,
+                Size::Auto => match self.direction {
+                    Direction::Horizontal => u32::from(item.style.min_width.unwrap_or(1)),
+                    Direction::Vertical => u32::from(item.style.min_height.unwrap_or(1)),
+                },
             };
         }
 
@@ -125,7 +130,7 @@ impl<'a> FlexItemNode<'a> {
         let Self { style, node } = self;
         match node {
             TuiNode::Styled(inner, s) => Self {
-                style: s,
+                style: style.merge(&s),
                 node: *inner,
             }
             .flatten_fragments(),
@@ -133,7 +138,7 @@ impl<'a> FlexItemNode<'a> {
                 .into_iter()
                 .flat_map(|child| {
                     let (child_style, child_node) = match child {
-                        TuiNode::Styled(inner, s) => (s, *inner),
+                        TuiNode::Styled(inner, s) => (style.merge(&s), *inner),
                         other => (style.clone(), other),
                     };
                     Self {

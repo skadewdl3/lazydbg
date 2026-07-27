@@ -25,6 +25,10 @@ impl CombinedStyle {
     pub fn reactatui(self) -> crate::layout::Style {
         self.reactatui
     }
+
+    pub fn split(self) -> (ratatui::style::Style, crate::layout::Style) {
+        (self.base, self.reactatui)
+    }
 }
 
 impl From<CombinedStyle> for ratatui::style::Style {

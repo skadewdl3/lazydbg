@@ -354,6 +354,75 @@ impl Style {
     pub fn resolve_justify_self(container: &Style, item: &Style) -> Align {
         item.justify_self.unwrap_or(container.justify_items)
     }
+
+    /// Merges `self` (outer style) with `other` (inner style).
+    /// Properties explicitly set in `self` override `other`.
+    /// Properties default/unset in `self` take their value from `other`.
+    pub fn merge(&self, other: &Style) -> Style {
+        Style {
+            direction: self.direction.or(other.direction),
+            justify_content: if self.justify_content != Justify::Start {
+                self.justify_content
+            } else {
+                other.justify_content
+            },
+            align_content: if self.align_content != Justify::Start {
+                self.align_content
+            } else {
+                other.align_content
+            },
+            align_items: if self.align_items != Align::Stretch {
+                self.align_items
+            } else {
+                other.align_items
+            },
+            justify_items: if self.justify_items != Align::Stretch {
+                self.justify_items
+            } else {
+                other.justify_items
+            },
+            gap: if self.gap != 0 { self.gap } else { other.gap },
+            gap_x: self.gap_x.or(other.gap_x),
+            gap_y: self.gap_y.or(other.gap_y),
+            padding: self.padding.or(other.padding),
+            columns: self.columns.clone().or_else(|| other.columns.clone()),
+            rows: self.rows.clone().or_else(|| other.rows.clone()),
+            align_self: self.align_self.or(other.align_self),
+            justify_self: self.justify_self.or(other.justify_self),
+            ignore: self.ignore || other.ignore,
+            size: if self.size != Size::Auto {
+                self.size
+            } else {
+                other.size
+            },
+            width: self.width.or(other.width),
+            height: self.height.or(other.height),
+            min_width: self.min_width.or(other.min_width),
+            max_width: self.max_width.or(other.max_width),
+            min_height: self.min_height.or(other.min_height),
+            max_height: self.max_height.or(other.max_height),
+            grow: self.grow.or(other.grow),
+            shrink: if (self.shrink - 1.0).abs() > f32::EPSILON {
+                self.shrink
+            } else {
+                other.shrink
+            },
+            column: self.column.or(other.column),
+            row: self.row.or(other.row),
+            column_span: if self.column_span != 1 {
+                self.column_span
+            } else {
+                other.column_span
+            },
+            row_span: if self.row_span != 1 {
+                self.row_span
+            } else {
+                other.row_span
+            },
+            column_end: self.column_end.or(other.column_end),
+            row_end: self.row_end.or(other.row_end),
+        }
+    }
 }
 
 pub fn clamp_rect(mut rect: Rect, style: &Style) -> Rect {

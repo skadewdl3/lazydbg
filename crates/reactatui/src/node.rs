@@ -71,7 +71,10 @@ impl<'a> TuiNode<'a> {
 
     pub fn take_style(self) -> (Style, Self) {
         match self {
-            Self::Styled(inner, style) => (style, *inner),
+            Self::Styled(inner, style) => {
+                let (inner_style, inner_node) = inner.take_style();
+                (style.merge(&inner_style), inner_node)
+            }
             other => (Style::default(), other),
         }
     }
@@ -104,7 +107,14 @@ impl<'a> Widget for TuiNode<'a> {
             TuiNode::Fragment(children) => render_fragment(children, area, buf),
             TuiNode::Flex(flex) => flex.render(area, buf),
             TuiNode::Grid(grid) => grid.render(area, buf),
-            TuiNode::Styled(inner, _style) => inner.render(area, buf),
+            TuiNode::Styled(inner, style) => match *inner {
+                TuiNode::Flex(flex) => flex.style(style).render(area, buf),
+                TuiNode::Grid(grid) => grid.style(style).render(area, buf),
+                TuiNode::Styled(child, inner_style) => {
+                    TuiNode::Styled(child, style.merge(&inner_style)).render(area, buf)
+                }
+                other => other.render(area, buf),
+            },
             TuiNode::Empty => {}
         }
     }
@@ -120,5 +130,22 @@ impl<'a> Widget for TuiNode<'a> {
 pub(crate) fn render_fragment(children: Vec<TuiNode<'_>>, area: Rect, buf: &mut Buffer) {
     for child in children {
         child.render(area, buf);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::style::Align;
+    use crate::layout::{Size, Style};
+
+    #[test]
+    fn test_additive_nested_styles() {
+        let inner = TuiNode::Empty.style(Style::default().align_self(Align::Center));
+        let outer = inner.style(Style::default().size(Size::Length(1)));
+
+        let (merged, _core) = outer.take_style();
+        assert_eq!(merged.size, Size::Length(1));
+        assert_eq!(merged.align_self, Some(Align::Center));
     }
 }

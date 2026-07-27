@@ -24,19 +24,17 @@ pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
         Propagation::Stop
     };
 
-    let st = style! {
-        if active {
-            background: green;
-            bold;
-        }
-    };
-
     // Format the frame information
     let text = format!("#{} {} {} ({}:{})", level, addr, func, file, line);
 
     tui! {
         <Paragraph::new(text)
-            style={st.clone()}
+            style={style! {
+                    if active {
+                        background: green;
+                        bold;
+                    }
+                }}
             on:click={thing}
         />
     }
@@ -69,13 +67,13 @@ pub fn Frame<'a>() -> TuiNode<'a> {
 
     tui! {
         <Block::default title={"Stack Frame"} borders={Borders::ALL}>
-            <List virtual={true}>
+            <List virtual={false}>
                 for frame in frames.get() {
                     <FrameItem(
                             &frame,
                             selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
                         )
-                        style={style!{ size: 5; }}
+                        style={style!{ size: 1; }}
                     />
                 }
             </List>

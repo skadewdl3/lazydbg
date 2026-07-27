@@ -186,7 +186,10 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
 
         let probe_area = Rect::new(0, 0, canvas_w, canvas_h);
         let measured = measure_node(child, probe_area);
-        let content_size = (measured.content_width, measured.content_height);
+        let content_size = (
+            measured.content_width.max(area.width),
+            measured.content_height.max(area.height),
+        );
 
         let next_w = if content_size.0 >= canvas_w {
             canvas_w.saturating_mul(2)
@@ -213,4 +216,37 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
         let dy = area.y as i32 - (measured.probe_area.y + clamped.1) as i32;
         ::reactatui::hooks::transform_mouse_regions(measured.region_start, measured.region_end, dx, dy, Some(area));
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+    use ratatui::widgets::Paragraph;
+    use reactatui::layout::{FlexItemNode, FlexNode};
+
+    #[test]
+    fn test_scroll_flex_child_and_opaque_child_span_viewport() {
+        reactatui::hooks::begin_frame();
+
+        let area = Rect::new(0, 0, 40, 3);
+        let item1 = TuiNode::from_widget(
+            Paragraph::new("Item1").style(ratatui::style::Style::default().bg(Color::Blue)),
+        );
+        let flex = FlexNode::vertical(vec![FlexItemNode::new(item1)]);
+
+        let scroll_node = Scroll(false, vec![TuiNode::from(flex)]);
+        let mut buf = Buffer::empty(area);
+        scroll_node.render(area, &mut buf);
+
+        // Verify entire line 0 in Scroll buffer is Blue across 40 columns
+        for x in 0..40 {
+            assert_eq!(
+                buf[(x, 0)].bg,
+                Color::Blue,
+                "Scroll flex item at x={} should fill viewport width",
+                x
+            );
+        }
+    }
 }
