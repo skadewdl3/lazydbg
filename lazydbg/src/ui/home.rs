@@ -69,8 +69,8 @@ pub fn Home<'a>() -> TuiNode<'a> {
             <Flex direction={Direction::Horizontal}>
                 <Flex direction={Direction::Vertical}>
                     <Status style={style!{ size: 3; }} />
-                    <Frame style={style!{ size: "1fr"; }} />
-                    <Disassembly style={style!{ size: "1fr"; }} />
+                    <Frame style={style!{ size: 1fr; }} />
+                    <Disassembly style={style!{ size: 1fr; }} />
                 </Flex>
                 <Logs is_active={false} />
             </Flex>

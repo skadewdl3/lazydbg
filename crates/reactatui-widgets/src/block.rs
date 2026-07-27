@@ -71,8 +71,8 @@ impl<'a> Block<'a> {
         self
     }
 
-    pub fn border_type(mut self, border_type: BorderType) -> Self {
-        self.inner = self.inner.border_type(border_type);
+    pub fn border_type(mut self, border_type: impl Into<BorderType>) -> Self {
+        self.inner = self.inner.border_type(border_type.into());
         self
     }
 

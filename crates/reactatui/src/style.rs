@@ -12,6 +12,7 @@
 pub struct CombinedStyle {
     pub base: ratatui::style::Style,
     pub reactatui: crate::layout::Style,
+    pub border_type: Option<ratatui::widgets::BorderType>,
 }
 
 impl CombinedStyle {
@@ -24,6 +25,11 @@ impl CombinedStyle {
     /// Explicit accessor, layout half.
     pub fn reactatui(self) -> crate::layout::Style {
         self.reactatui
+    }
+
+    pub fn border_type(&self) -> ratatui::widgets::BorderType {
+        self.border_type
+            .unwrap_or(ratatui::widgets::BorderType::Plain)
     }
 
     pub fn split(self) -> (ratatui::style::Style, crate::layout::Style) {
@@ -40,5 +46,11 @@ impl From<CombinedStyle> for ratatui::style::Style {
 impl From<CombinedStyle> for crate::layout::Style {
     fn from(c: CombinedStyle) -> Self {
         c.reactatui
+    }
+}
+
+impl From<CombinedStyle> for ratatui::widgets::BorderType {
+    fn from(c: CombinedStyle) -> Self {
+        c.border_type.unwrap_or(ratatui::widgets::BorderType::Plain)
     }
 }

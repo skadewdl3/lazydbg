@@ -489,6 +489,10 @@ fn parse_color_value(input: ParseStream) -> syn::Result<StyleValueKind> {
         return parse_if_value(input, parse_color_value);
     }
 
+    if let Some(hex) = try_parse_hex_color(input)? {
+        return Ok(hex);
+    }
+
     let fork = input.fork();
     if let Ok((word, span)) = read_kebab_word(&fork) {
         if word == "rgb" && fork.peek(syn::token::Paren) {
@@ -603,6 +607,12 @@ fn parse_layout_value(key: &str, input: ParseStream) -> syn::Result<StyleValueKi
         }
     }
 
+    if matches!(key, "size" | "width" | "height") {
+        if let Some(size_value) = try_parse_size_literal(input)? {
+            return Ok(size_value);
+        }
+    }
+
     let expr: Expr = input.parse().map_err(|e| {
         syn::Error::new(
             e.span(),
@@ -610,6 +620,61 @@ fn parse_layout_value(key: &str, input: ParseStream) -> syn::Result<StyleValueKi
         )
     })?;
     Ok(StyleValueKind::Expr(expr))
+}
+
+fn emit_border(value: StyleValueKind) -> syn::Result<TokenStream2> {
+    Ok(match value {
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: Some(else_val),
+        } => {
+            let then_b = emit_border(*then_val)?;
+            let else_b = emit_border(*else_val)?;
+            quote! { if #condition { #then_b } else { #else_b } }
+        }
+        StyleValueKind::If { condition, .. } => {
+            return Err(syn::Error::new(
+                condition.span(),
+                "an `if` without an `else` can only be used as a top-level property value",
+            ));
+        }
+        StyleValueKind::Expr(expr) => quote! { #expr },
+        _ => {
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "expected a border type value",
+            ));
+        }
+    })
+}
+
+fn emit_border_stmt(value: StyleValueKind) -> syn::Result<TokenStream2> {
+    match value {
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: Some(else_val),
+        } => {
+            let then_b = emit_border(*then_val)?;
+            let else_stmt = emit_border_stmt(*else_val)?;
+            Ok(quote! {
+                if #condition { __style_border_type = Some(#then_b); } else #else_stmt
+            })
+        }
+        StyleValueKind::If {
+            condition,
+            then_val,
+            else_val: None,
+        } => {
+            let then_b = emit_border(*then_val)?;
+            Ok(quote! { if #condition { __style_border_type = Some(#then_b); } })
+        }
+        _ => Err(syn::Error::new(
+            Span::call_site(),
+            "expected an `if` expression",
+        )),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -677,6 +742,7 @@ impl Parse for StyleEntry {
 
         let value = match key.as_str() {
             "color" | "fg" | "background" | "bg" | "underline_color" => parse_color_value(input)?,
+            "border_type" => parse_border_type_value(input)?,
             _ => parse_layout_value(&key, input)?,
         };
 
@@ -712,6 +778,134 @@ impl Parse for StyleInput {
 enum Target {
     Color,
     Layout,
+    Border,
+}
+
+/// Recognizes bare numeric unit literals for `size`/`width`/`height`:
+/// `size: 2fr;`, `size: 50%;` — alongside plain cell counts (`size: 3;`,
+/// handled by the pre-existing `Into<Size>` fallback) and `size: auto;`.
+fn try_parse_size_literal(input: ParseStream) -> syn::Result<Option<StyleValueKind>> {
+    let fork = input.fork();
+    let Ok(lit) = fork.parse::<syn::LitInt>() else {
+        return Ok(None);
+    };
+
+    let suffix = lit.suffix();
+    if suffix == "fr" {
+        let value: u16 = lit.base10_digits().parse().map_err(|_| {
+            syn::Error::new(lit.span(), "expected an integer `fr` value, e.g. `2fr`")
+        })?;
+        input.advance_to(&fork);
+        let tokens = quote! { ::reactatui::layout::Size::Fr(#value) };
+        return Ok(Some(StyleValueKind::Expr(syn::parse2(tokens)?)));
+    }
+
+    if suffix.is_empty() && fork.peek(Token![%]) {
+        let value: u16 = lit.base10_digits().parse().map_err(|_| {
+            syn::Error::new(lit.span(), "expected an integer percentage, e.g. `50%`")
+        })?;
+        fork.parse::<Token![%]>()?;
+        input.advance_to(&fork);
+        let tokens = quote! { ::reactatui::layout::Size::Percent(#value) };
+        return Ok(Some(StyleValueKind::Expr(syn::parse2(tokens)?)));
+    }
+
+    Ok(None)
+}
+
+/// Recognizes `#rgb` / `#rrggbb` hex colors: `color: #ff5500;`, `bg: #f00;`.
+fn try_parse_hex_color(input: ParseStream) -> syn::Result<Option<StyleValueKind>> {
+    let fork = input.fork();
+    if fork.parse::<Token![#]>().is_err() {
+        return Ok(None);
+    }
+
+    let raw = if let Ok(ident) = fork.parse::<Ident>() {
+        ident.to_string()
+    } else if let Ok(lit) = fork.parse::<syn::LitInt>() {
+        format!("{}{}", lit.base10_digits(), lit.suffix())
+    } else {
+        return Ok(None);
+    };
+
+    let hex = raw.to_ascii_lowercase();
+    let Some((r, g, b)) = parse_hex_digits(&hex) else {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            format!(
+                "`#{raw}` isn't a valid hex color — expected 3 or 6 hex digits, \
+                 e.g. `#f00` or `#ff0000`"
+            ),
+        ));
+    };
+
+    input.advance_to(&fork);
+    Ok(Some(StyleValueKind::Rgb(
+        syn::parse2(quote! { #r })?,
+        syn::parse2(quote! { #g })?,
+        syn::parse2(quote! { #b })?,
+    )))
+}
+
+fn parse_hex_digits(s: &str) -> Option<(u8, u8, u8)> {
+    let digit = |c: u8| -> Option<u8> {
+        match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            _ => None,
+        }
+    };
+    let bytes = s.as_bytes();
+    match bytes.len() {
+        3 => {
+            let r = digit(bytes[0])?;
+            let g = digit(bytes[1])?;
+            let b = digit(bytes[2])?;
+            Some((r * 17, g * 17, b * 17)) // #abc -> #aabbcc
+        }
+        6 => {
+            let pair =
+                |i: usize| -> Option<u8> { Some(digit(bytes[i])? * 16 + digit(bytes[i + 1])?) };
+            Some((pair(0)?, pair(2)?, pair(4)?))
+        }
+        _ => None,
+    }
+}
+
+fn parse_border_type_value(input: ParseStream) -> syn::Result<StyleValueKind> {
+    if input.peek(Token![if]) {
+        return parse_if_value(input, parse_border_type_value);
+    }
+    let fork = input.fork();
+    if let Ok((word, _)) = read_kebab_word(&fork) {
+        let variant = match word.to_ascii_lowercase().as_str() {
+            "plain" => Some("Plain"),
+            "rounded" => Some("Rounded"),
+            "double" => Some("Double"),
+            "thick" => Some("Thick"),
+            "quadrant-inside" => Some("QuadrantInside"),
+            "quadrant-outside" => Some("QuadrantOutside"),
+            _ => None,
+        };
+        if let Some(variant) = variant {
+            input.advance_to(&fork);
+            let ident = format_ident!("{variant}");
+            return Ok(StyleValueKind::Expr(syn::parse2(
+                quote! { ::ratatui::widgets::BorderType::#ident },
+            )?));
+        }
+    }
+
+    let expr: Expr = input.parse().map_err(|e| {
+        syn::Error::new(
+            e.span(),
+            format!(
+                "expected a border type (plain, rounded, double, thick, \
+                 quadrant-inside, quadrant-outside) or a `BorderType` expression — {e}"
+            ),
+        )
+    })?;
+    Ok(StyleValueKind::Expr(expr))
 }
 
 /// Shorthand key -> (which half of `CombinedStyle`, builder method name).
@@ -724,6 +918,7 @@ fn lookup_key(name: &str) -> Option<(Target, &'static str)> {
         "add_modifier" => (Color, "add_modifier"),
         "remove_modifier" | "sub_modifier" => (Color, "remove_modifier"),
         "patch" => (Color, "patch"),
+        "border_type" => (Border, "border_type"),
 
         "direction" | "flex_direction" => (Layout, "direction"),
         "justify_content" => (Layout, "justify_content"),
@@ -975,7 +1170,7 @@ fn emit_entry(entry: StyleEntry) -> syn::Result<Vec<TokenStream2>> {
                     __style_layout = __style_layout.#call;
                 });
             }
-            None => {
+            _ => {
                 return Err(syn::Error::new(
                     span,
                     format!(
@@ -1015,7 +1210,7 @@ fn emit_entry(entry: StyleEntry) -> syn::Result<Vec<TokenStream2>> {
                     });
                 }
             }
-            None => {
+            _ => {
                 let hint = match closest_match(&key, ALL_KEYS) {
                     Some(s) => format!(" — did you mean `{s}`?"),
                     None => String::new(),
@@ -1094,10 +1289,13 @@ pub fn expand(input: TokenStream2) -> TokenStream2 {
     quote! {{
         let mut __style_color = ::ratatui::style::Style::default();
         let mut __style_layout = ::reactatui::layout::Style::default();
+        let mut __style_border_type: ::core::option::Option<::ratatui::widgets::BorderType> =
+            ::core::option::Option::None;
         #(#stmts)*
         ::reactatui::style::CombinedStyle {
             base: __style_color,
             reactatui: __style_layout,
+            border_type: __style_border_type,
         }
     }}
 }
