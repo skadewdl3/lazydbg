@@ -2,9 +2,9 @@ use ratatui::widgets::{Borders, Paragraph};
 use reactatui::{
     TuiNode, component,
     hooks::{use_global, use_memo},
-    style, tui,
+    tui,
 };
-use reactatui_widgets::{Block, Button};
+use reactatui_widgets::Block;
 
 use crate::interface::DbgSession;
 

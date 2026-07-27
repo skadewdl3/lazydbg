@@ -1,5 +1,4 @@
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
-use reactatui::layout::Size;
 use reactatui::{hooks::register_mouse_region, keybindings, measure::measure_node, prelude::*};
 
 fn blit_window(src: &Buffer, src_area: Rect, offset: (u16, u16), target: Rect, buf: &mut Buffer) {

@@ -385,8 +385,6 @@ impl<'a> Widget for GridNode<'a> {
             let row_span = style.row_span.max(1);
             let in_auto_col = col_span == 1 && matches!(columns.get(*col), Some(Size::Auto));
             let in_auto_row = row_span == 1 && matches!(rows.get(*row), Some(Size::Auto));
-            let align_row = Style::resolve_align(&container_style, style);
-            let align_col = Style::resolve_justify_self(&container_style, style);
 
             let col_hint = in_auto_col
                 .then(|| size_hint(style.size, available_w))
@@ -402,12 +400,10 @@ impl<'a> Widget for GridNode<'a> {
                 auto_row_size[*row] = auto_row_size[*row].max(h);
             }
 
-            let needs_measure = (in_auto_col && col_hint.is_none())
-                || (in_auto_row && row_hint.is_none())
-                || align_row != Align::Stretch
-                || align_col != Align::Stretch;
+            let needs_auto_measure =
+                (in_auto_col && col_hint.is_none()) || (in_auto_row && row_hint.is_none());
 
-            if needs_measure {
+            if needs_auto_measure {
                 let node = nodes[i].take().expect("node already taken");
                 let probe_w = if in_auto_col && col_hint.is_none() {
                     fair_col_w.max(1)
@@ -456,6 +452,28 @@ impl<'a> Widget for GridNode<'a> {
 
         let col_offsets = track_offsets(&col_sizes, gap_x, &col_extra_gaps, col_leading);
         let row_offsets = track_offsets(&row_sizes, gap_y, &row_extra_gaps, row_leading);
+        //
+        // Second pass: items that only need measuring for non-Stretch alignment
+        // (not auto-track sizing) are probed now, at their real final cell size —
+        // deferred from the pass above because that size wasn't known until the
+        // tracks were resolved.
+        for (i, ((col, row), style)) in placements.iter().zip(styles.iter()).enumerate() {
+            if premeasured[i].is_some() {
+                continue;
+            }
+            let align_row = Style::resolve_align(&container_style, style);
+            let align_col = Style::resolve_justify_self(&container_style, style);
+            if align_row == Align::Stretch && align_col == Align::Stretch {
+                continue;
+            }
+            let col_span = style.column_span.max(1);
+            let row_span = style.row_span.max(1);
+            let cell_w = span_extent_from_offsets(&col_offsets, &col_sizes, *col, col_span).max(1);
+            let cell_h = span_extent_from_offsets(&row_offsets, &row_sizes, *row, row_span).max(1);
+            let node = nodes[i].take().expect("node already taken");
+            let probe = Rect::new(area.x, area.y, cell_w, cell_h);
+            premeasured[i] = Some(measure_node(node, probe));
+        }
 
         for (i, ((col, row), style)) in placements.into_iter().zip(styles.into_iter()).enumerate() {
             let col_span = style.column_span.max(1);

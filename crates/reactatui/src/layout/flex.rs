@@ -29,6 +29,16 @@ impl<'a> FlexNode<'a> {
         }
     }
 
+    pub fn horizontal(items: impl Into<Vec<FlexItemNode<'a>>>) -> Self {
+        let flex = Self::new(items).direction(Direction::Horizontal);
+        flex
+    }
+
+    pub fn vertical(items: impl Into<Vec<FlexItemNode<'a>>>) -> Self {
+        let flex = Self::new(items).direction(Direction::Vertical);
+        flex
+    }
+
     pub fn direction(mut self, direction: Direction) -> Self {
         self.direction = direction;
         self
@@ -36,11 +46,6 @@ impl<'a> FlexNode<'a> {
 
     pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
         self.padding = padding.into();
-        self
-    }
-
-    fn gap(mut self, gap: u16) -> Self {
-        self.gap = gap;
         self
     }
 
@@ -60,7 +65,7 @@ impl<'a> FlexNode<'a> {
     /// convention Grid's auto-tracks use for the "guaranteed minimum"
     /// half of sizing.
     pub fn natural_size(&self, cross_axis_hint: u16) -> (u16, u16) {
-        let (ignored, participating): (Vec<_>, Vec<_>) =
+        let (_ignored, participating): (Vec<_>, Vec<_>) =
             self.items.iter().partition(|item| item.style.ignore);
 
         let gap_total = self
@@ -252,34 +257,35 @@ impl<'a> Widget for FlexNode<'a> {
                 / u32::from(auto_count.max(1)))
             .min(u32::from(u16::MAX)) as u16;
 
+            // First pass: measure only `Auto` items — their content size
+            // directly determines their basis, so this must happen before
+            // `total_basis` is summed below. Items that only need
+            // measuring for cross-axis alignment (non-Stretch `align_self`)
+            // are deliberately *not* touched here: for `Fr`/shrunk
+            // `Length`/`Percent` items their true main-axis size isn't
+            // known yet (grow/shrink hasn't run), and probing them at a
+            // placeholder like `basis[i]` (0 for `Fr`) would measure a
+            // zero-sized rect and later blit zero content — see the
+            // second measurement pass below, after `sizes` is resolved.
             for i in 0..count {
-                let align = Style::resolve_align(&container_style, &styles[i]);
-                let needs_measure = is_auto[i] || align != Align::Stretch;
-
-                if needs_measure {
-                    let node = nodes[i].take().expect("node already taken");
-                    let main_probe = if is_auto[i] {
-                        fair_share.max(1)
-                    } else {
-                        basis[i]
-                    };
-                    let probe = match direction {
-                        Direction::Horizontal => {
-                            Rect::new(area.x, area.y, main_probe, cross_available)
-                        }
-                        Direction::Vertical => {
-                            Rect::new(area.x, area.y, cross_available, main_probe)
-                        }
-                    };
-                    let measured = measure_node(node, probe);
-                    if is_auto[i] {
-                        basis[i] = match direction {
-                            Direction::Horizontal => measured.content_width,
-                            Direction::Vertical => measured.content_height,
-                        };
-                    }
-                    premeasured[i] = Some(measured);
+                if !is_auto[i] {
+                    continue;
                 }
+                let node = nodes[i].take().expect("node already taken");
+                let probe = match direction {
+                    Direction::Horizontal => {
+                        Rect::new(area.x, area.y, fair_share.max(1), cross_available)
+                    }
+                    Direction::Vertical => {
+                        Rect::new(area.x, area.y, cross_available, fair_share.max(1))
+                    }
+                };
+                let measured = measure_node(node, probe);
+                basis[i] = match direction {
+                    Direction::Horizontal => measured.content_width,
+                    Direction::Vertical => measured.content_height,
+                };
+                premeasured[i] = Some(measured);
             }
 
             let total_basis: u32 = basis.iter().map(|&b| u32::from(b)).sum();
@@ -341,6 +347,29 @@ impl<'a> Widget for FlexNode<'a> {
                 }
                 // else: nothing can shrink — items overflow, matching
                 // CSS's behavior when shrink is 0 everywhere.
+            }
+
+            // Second pass: any remaining item whose cross-axis alignment
+            // is not `Stretch` needs its content measured to know how to
+            // position it within its slot — but only *now*, once `sizes`
+            // holds each item's real, final main-axis size (post
+            // grow/shrink). Auto items were already measured above and
+            // are skipped here via the `premeasured[i].is_some()` check.
+            for i in 0..count {
+                if premeasured[i].is_some() {
+                    continue;
+                }
+                let align = Style::resolve_align(&container_style, &styles[i]);
+                if align == Align::Stretch {
+                    continue;
+                }
+                let node = nodes[i].take().expect("node already taken");
+                let main_probe = sizes[i].max(1);
+                let probe = match direction {
+                    Direction::Horizontal => Rect::new(area.x, area.y, main_probe, cross_available),
+                    Direction::Vertical => Rect::new(area.x, area.y, cross_available, main_probe),
+                };
+                premeasured[i] = Some(measure_node(node, probe));
             }
 
             let used = sizes

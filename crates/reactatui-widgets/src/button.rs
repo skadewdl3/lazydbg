@@ -1,10 +1,9 @@
 // crates/reactatui-widgets/src/button.rs
 use ratatui::{
     layout::Alignment,
-    style::Modifier,
     widgets::{Borders, Paragraph},
 };
-use reactatui::{keybindings, prelude::*};
+use reactatui::prelude::*;
 
 use crate::Block;
 
