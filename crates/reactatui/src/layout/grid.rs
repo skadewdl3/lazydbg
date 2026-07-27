@@ -64,9 +64,24 @@ impl<'a> GridNode<'a> {
     /// after `.style(..)`, for asymmetric gaps).
     pub fn style(mut self, style: impl Into<Style>) -> Self {
         let style = style.into();
-        if style.gap > 0 {
+        if let Some(cols) = &style.columns {
+            self.columns = cols.clone();
+        }
+        if let Some(rows) = &style.rows {
+            self.rows = rows.clone();
+        }
+        if let Some(gx) = style.gap_x {
+            self.gap_x = gx;
+        } else if style.gap > 0 {
             self.gap_x = style.gap;
+        }
+        if let Some(gy) = style.gap_y {
+            self.gap_y = gy;
+        } else if style.gap > 0 {
             self.gap_y = style.gap;
+        }
+        if let Some(padding) = style.padding {
+            self.padding = padding;
         }
         self.style = style;
         self
@@ -144,7 +159,7 @@ impl<'a> GridItemNode<'a> {
                 .flat_map(|child| {
                     let (child_style, child_node) = match child {
                         TuiNode::Styled(inner, s) => (s, *inner),
-                        other => (style, other),
+                        other => (style.clone(), other),
                     };
                     Self {
                         style: child_style,
@@ -169,8 +184,8 @@ fn auto_place(col_count: usize, styles: &[Style]) -> Vec<(usize, usize)> {
     // auto-placed items flow around them.
     for style in styles {
         if let (Some(c), Some(r)) = (style.column, style.row) {
-            for dc in 0..style.column_span.max(1) {
-                for dr in 0..style.row_span.max(1) {
+            for dc in 0..style.resolved_column_span().max(1) {
+                for dr in 0..style.resolved_row_span().max(1) {
                     occupied.insert((c + dc, r + dr));
                 }
             }
@@ -181,8 +196,8 @@ fn auto_place(col_count: usize, styles: &[Style]) -> Vec<(usize, usize)> {
     let mut auto_cursor = (0usize, 0usize);
 
     for style in styles {
-        let col_span = style.column_span.max(1);
-        let row_span = style.row_span.max(1);
+        let col_span = style.resolved_column_span().max(1);
+        let row_span = style.resolved_row_span().max(1);
 
         let (col, row) = match (style.column, style.row) {
             (Some(c), Some(r)) => (c, r),
@@ -301,7 +316,7 @@ impl<'a> Widget for GridNode<'a> {
             return;
         }
 
-        let styles: Vec<Style> = items.iter().map(|it| it.style).collect();
+        let styles: Vec<Style> = items.iter().map(|it| it.style.clone()).collect();
         let mut nodes: Vec<Option<TuiNode<'a>>> =
             items.into_iter().map(|it| Some(it.node)).collect();
 
@@ -415,7 +430,8 @@ impl<'a> Widget for GridNode<'a> {
                 } else {
                     available_h
                 };
-                let probe = Rect::new(area.x, area.y, probe_w, probe_h);
+                // Probe always at (0,0) so blit_measured's source offset is consistent.
+                let probe = Rect::new(0, 0, probe_w, probe_h);
                 let measured = measure_node(node, probe);
                 if in_auto_col && col_hint.is_none() {
                     auto_col_size[*col] = auto_col_size[*col].max(measured.content_width);
@@ -466,18 +482,19 @@ impl<'a> Widget for GridNode<'a> {
             if align_row == Align::Stretch && align_col == Align::Stretch {
                 continue;
             }
-            let col_span = style.column_span.max(1);
-            let row_span = style.row_span.max(1);
+            let col_span = style.resolved_column_span().max(1);
+            let row_span = style.resolved_row_span().max(1);
             let cell_w = span_extent_from_offsets(&col_offsets, &col_sizes, *col, col_span).max(1);
             let cell_h = span_extent_from_offsets(&row_offsets, &row_sizes, *row, row_span).max(1);
             let node = nodes[i].take().expect("node already taken");
-            let probe = Rect::new(area.x, area.y, cell_w, cell_h);
+            // Probe always at (0,0) for consistent blit origins.
+            let probe = Rect::new(0, 0, cell_w, cell_h);
             premeasured[i] = Some(measure_node(node, probe));
         }
 
         for (i, ((col, row), style)) in placements.into_iter().zip(styles.into_iter()).enumerate() {
-            let col_span = style.column_span.max(1);
-            let row_span = style.row_span.max(1);
+            let col_span = style.resolved_column_span().max(1);
+            let row_span = style.resolved_row_span().max(1);
 
             let cell_w = span_extent_from_offsets(&col_offsets, &col_sizes, col, col_span);
             let cell_h = span_extent_from_offsets(&row_offsets, &row_sizes, row, row_span);

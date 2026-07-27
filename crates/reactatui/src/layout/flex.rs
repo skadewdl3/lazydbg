@@ -30,13 +30,11 @@ impl<'a> FlexNode<'a> {
     }
 
     pub fn horizontal(items: impl Into<Vec<FlexItemNode<'a>>>) -> Self {
-        let flex = Self::new(items).direction(Direction::Horizontal);
-        flex
+        Self::new(items).direction(Direction::Horizontal)
     }
 
     pub fn vertical(items: impl Into<Vec<FlexItemNode<'a>>>) -> Self {
-        let flex = Self::new(items).direction(Direction::Vertical);
-        flex
+        Self::new(items).direction(Direction::Vertical)
     }
 
     pub fn direction(mut self, direction: Direction) -> Self {
@@ -50,20 +48,38 @@ impl<'a> FlexNode<'a> {
     }
 
     /// Container-level: `justify_content` (main-axis distribution),
-    /// `align_items` (default cross-axis alignment for children).
+    /// `align_items` (default cross-axis alignment for children), `direction`, `gap`, `padding`.
     pub fn style(mut self, style: impl Into<Style>) -> Self {
         let style = style.into();
-        if style.gap > 0 {
+        if let Some(dir) = style.direction {
+            self.direction = dir;
+        }
+        if let Some(gx) = style.gap_x {
+            if self.direction == Direction::Horizontal {
+                self.gap = gx;
+            }
+        }
+        if let Some(gy) = style.gap_y {
+            if self.direction == Direction::Vertical {
+                self.gap = gy;
+            }
+        }
+        if style.gap > 0 && style.gap_x.is_none() && style.gap_y.is_none() {
             self.gap = style.gap;
+        }
+        if let Some(padding) = style.padding {
+            self.padding = padding;
         }
         self.style = style;
         self
     }
 
-    /// Sums each item's main-axis contribution: `Length`/`Percent` sizes
-    /// count directly, `Fr` and `Auto` (unmeasured) contribute 0 — same
-    /// convention Grid's auto-tracks use for the "guaranteed minimum"
-    /// half of sizing.
+    /// Returns the statically-known minimum size: only `Length`/`Percent`
+    /// items contribute; `Auto` and `Fr` items contribute 0 (their sizes
+    /// are not known without rendering). Use this for a cheap lower-bound
+    /// estimate (e.g. in `Scroll`'s fast path).
+    ///
+    /// Returns `(width, height)`.
     pub fn natural_size(&self, cross_axis_hint: u16) -> (u16, u16) {
         let (_ignored, participating): (Vec<_>, Vec<_>) =
             self.items.iter().partition(|item| item.style.ignore);
@@ -118,7 +134,7 @@ impl<'a> FlexItemNode<'a> {
                 .flat_map(|child| {
                     let (child_style, child_node) = match child {
                         TuiNode::Styled(inner, s) => (s, *inner),
-                        other => (style, other),
+                        other => (style.clone(), other),
                     };
                     Self {
                         style: child_style,
@@ -196,7 +212,7 @@ impl<'a> Widget for FlexNode<'a> {
         let count = participating.len();
 
         if count != 0 && area.width != 0 && area.height != 0 {
-            let styles: Vec<Style> = participating.iter().map(|it| it.style).collect();
+            let styles: Vec<Style> = participating.iter().map(|it| it.style.clone()).collect();
             let mut nodes: Vec<Option<TuiNode<'a>>> =
                 participating.into_iter().map(|it| Some(it.node)).collect();
 
@@ -228,15 +244,17 @@ impl<'a> Widget for FlexNode<'a> {
             // rect they're probed with — measuring them against the full
             // remaining budget makes every Auto item report a basis equal
             // to that whole budget, forcing a shrink pass later whose
-            // blit then clips their trailing border off (it was only ever
-            // rendered at the oversized probe size). Probing at a fair
+            // blit then clips their trailing border off. Probing at a fair
             // share instead means the measured size already matches (or
-            // is very close to) the eventual post-shrink size, so no
-            // truncating blit is needed for the common case.
+            // is very close to) the eventual post-shrink size.
             let mut known_basis_sum: u32 = 0;
             let mut auto_count: u16 = 0;
             for i in 0..count {
-                match styles[i].size {
+                let item_size = match direction {
+                    Direction::Horizontal => styles[i].width.unwrap_or(styles[i].size),
+                    Direction::Vertical => styles[i].height.unwrap_or(styles[i].size),
+                };
+                match item_size {
                     Size::Length(n) => {
                         basis[i] = n;
                         known_basis_sum += u32::from(n);
@@ -246,11 +264,18 @@ impl<'a> Widget for FlexNode<'a> {
                         basis[i] = n;
                         known_basis_sum += u32::from(n);
                     }
-                    Size::Fr(f) => grow[i] = f as f32,
+                    Size::Fr(f) => {
+                        if styles[i].grow.is_none() {
+                            grow[i] = f as f32;
+                        }
+                    }
                     Size::Auto => {
                         is_auto[i] = true;
                         auto_count += 1;
                     }
+                }
+                if let Some(g) = styles[i].grow {
+                    grow[i] = g;
                 }
             }
             let fair_share = (u32::from(available).saturating_sub(known_basis_sum)
@@ -258,27 +283,17 @@ impl<'a> Widget for FlexNode<'a> {
             .min(u32::from(u16::MAX)) as u16;
 
             // First pass: measure only `Auto` items — their content size
-            // directly determines their basis, so this must happen before
-            // `total_basis` is summed below. Items that only need
-            // measuring for cross-axis alignment (non-Stretch `align_self`)
-            // are deliberately *not* touched here: for `Fr`/shrunk
-            // `Length`/`Percent` items their true main-axis size isn't
-            // known yet (grow/shrink hasn't run), and probing them at a
-            // placeholder like `basis[i]` (0 for `Fr`) would measure a
-            // zero-sized rect and later blit zero content — see the
-            // second measurement pass below, after `sizes` is resolved.
+            // directly determines their basis. Probe rects always start at
+            // (0, 0) so the measured scratch buffer origin is consistent
+            // with `blit_measured`'s expectations.
             for i in 0..count {
                 if !is_auto[i] {
                     continue;
                 }
                 let node = nodes[i].take().expect("node already taken");
                 let probe = match direction {
-                    Direction::Horizontal => {
-                        Rect::new(area.x, area.y, fair_share.max(1), cross_available)
-                    }
-                    Direction::Vertical => {
-                        Rect::new(area.x, area.y, cross_available, fair_share.max(1))
-                    }
+                    Direction::Horizontal => Rect::new(0, 0, fair_share.max(1), cross_available),
+                    Direction::Vertical => Rect::new(0, 0, cross_available, fair_share.max(1)),
                 };
                 let measured = measure_node(node, probe);
                 basis[i] = match direction {
@@ -298,9 +313,7 @@ impl<'a> Widget for FlexNode<'a> {
                 // Grow phase: distribute leftover space proportionally by
                 // each item's `Fr` weight. If nothing has a weight, sizes
                 // stay at basis and leftover is handled by
-                // justify_content below (CSS rule: justify-content only
-                // matters when nothing grows to consume the leftover
-                // space).
+                // justify_content below.
                 let free_space = free_space as u16;
                 let total_grow: f32 = grow.iter().sum();
                 if total_grow > 0.0 {
@@ -355,6 +368,7 @@ impl<'a> Widget for FlexNode<'a> {
             // holds each item's real, final main-axis size (post
             // grow/shrink). Auto items were already measured above and
             // are skipped here via the `premeasured[i].is_some()` check.
+            // Probe rects always start at (0, 0).
             for i in 0..count {
                 if premeasured[i].is_some() {
                     continue;
@@ -366,8 +380,8 @@ impl<'a> Widget for FlexNode<'a> {
                 let node = nodes[i].take().expect("node already taken");
                 let main_probe = sizes[i].max(1);
                 let probe = match direction {
-                    Direction::Horizontal => Rect::new(area.x, area.y, main_probe, cross_available),
-                    Direction::Vertical => Rect::new(area.x, area.y, cross_available, main_probe),
+                    Direction::Horizontal => Rect::new(0, 0, main_probe, cross_available),
+                    Direction::Vertical => Rect::new(0, 0, cross_available, main_probe),
                 };
                 premeasured[i] = Some(measure_node(node, probe));
             }

@@ -1,7 +1,7 @@
 use ratatui::widgets::{Borders, Paragraph};
 use reactatui::{
     TuiNode, component,
-    hooks::{use_emit, use_global_with, use_key, use_memo, use_state},
+    hooks::{Propagation, use_emit, use_global_with, use_key, use_memo, use_state},
     keybindings, tui,
 };
 use reactatui_macros::style;
@@ -19,7 +19,10 @@ pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
     let line = frame.line().unwrap_or("?".into());
     let emitter = use_emit::<()>("frame_selected");
 
-    let thing = move |_| emitter.emit(());
+    let thing = move |_| {
+        emitter.emit(());
+        Propagation::Stop
+    };
 
     let st = style! {
         if active {
@@ -33,7 +36,7 @@ pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
 
     tui! {
         <Paragraph::new(text)
-            style={st}
+            style={st.clone()}
             on:click={thing}
         />
     }
@@ -72,7 +75,7 @@ pub fn Frame<'a>() -> TuiNode<'a> {
                             &frame,
                             selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
                         )
-                        style={style!{ size: 1; }}
+                        style={style!{ size: 5; }}
                     />
                 }
             </List>

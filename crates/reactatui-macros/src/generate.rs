@@ -354,7 +354,13 @@ fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {
 
     let click_tokens = match &click {
         Some(h) => {
-            quote! { Some(Box::new(#h) as Box<dyn FnMut(ratatui::crossterm::event::MouseButton)>) }
+            quote! { Some(Box::new({
+                let mut __h = #h;
+                move |btn: ratatui::crossterm::event::MouseButton| -> ::reactatui::hooks::Propagation {
+                    __h(btn);
+                    ::reactatui::hooks::Propagation::Stop
+                }
+            }) as Box<dyn FnMut(ratatui::crossterm::event::MouseButton) -> ::reactatui::hooks::Propagation>) }
         }
         None => quote! { None },
     };
@@ -367,11 +373,27 @@ fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2 {
         None => quote! { None },
     };
     let scrollx_tokens = match &scrollx {
-        Some(h) => quote! { Some(Box::new(#h) as Box<dyn FnMut(i16)>) },
+        Some(h) => {
+            quote! { Some(Box::new({
+                let mut __h = #h;
+                move |delta: i16| -> ::reactatui::hooks::Propagation {
+                    __h(delta);
+                    ::reactatui::hooks::Propagation::Stop
+                }
+            }) as Box<dyn FnMut(i16) -> ::reactatui::hooks::Propagation>) }
+        }
         None => quote! { None },
     };
     let scrolly_tokens = match &scrolly {
-        Some(h) => quote! { Some(Box::new(#h) as Box<dyn FnMut(i16)>) },
+        Some(h) => {
+            quote! { Some(Box::new({
+                let mut __h = #h;
+                move |delta: i16| -> ::reactatui::hooks::Propagation {
+                    __h(delta);
+                    ::reactatui::hooks::Propagation::Stop
+                }
+            }) as Box<dyn FnMut(i16) -> ::reactatui::hooks::Propagation>) }
+        }
         None => quote! { None },
     };
 

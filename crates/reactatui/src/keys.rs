@@ -175,32 +175,39 @@ macro_rules! keybindings {
         $($pat:literal)|+ => $handler:expr
         $(, $($rest:tt)*)?
     ) => {
-        $keys.on_when(
-            move |event: &::ratatui::crossterm::event::KeyEvent| {
-                $(
-                    if $crate::keys::parse_chord_spec($pat)
-                        .steps
-                        .iter()
-                        .all(|s| s.matches(event))
-                    {
-                        return true;
+        {
+            let mut __h = $handler;
+            let __chords: Vec<Vec<$crate::keys::ParsedKeySpec>> = vec![
+                $($crate::keys::parse_chord_spec($pat).steps),+
+            ];
+            
+            let all_single = __chords.iter().all(|c| c.len() == 1);
+            
+            if all_single {
+                $keys.on_when(
+                    move |event: &::ratatui::crossterm::event::KeyEvent| {
+                        $(
+                            if $crate::keys::parse_chord_spec($pat).steps[0].matches(event) {
+                                return true;
+                            }
+                        )+
+                        false
+                    },
+                    move |_event: ::ratatui::crossterm::event::KeyEvent| -> ::reactatui::hooks::Propagation {
+                        __h();
+                        ::reactatui::hooks::Propagation::Stop
                     }
-                )+
-
-                false
-            },
-            {
-                let mut __h = $handler;
-
-                move |_event: ::ratatui::crossterm::event::KeyEvent|
-                    -> ::reactatui::hooks::Propagation
-                {
-                    __h();
-                    ::reactatui::hooks::Propagation::Stop
-                }
-            },
-        );
-
+                );
+            } else {
+                $keys.on_chord(
+                    __chords,
+                    move || -> ::reactatui::hooks::Propagation {
+                        __h();
+                        ::reactatui::hooks::Propagation::Stop
+                    }
+                );
+            }
+        }
         $crate::keybindings!(@arm $keys, $($($rest)*)?);
     };
 }

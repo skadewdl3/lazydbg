@@ -1,16 +1,36 @@
 use ratatui::layout::Rect;
 
-#[derive(Clone, Copy, Default)]
-#[allow(unused)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Padding {
-    top: u16,
-    right: u16,
-    bottom: u16,
-    left: u16,
+    pub top: u16,
+    pub right: u16,
+    pub bottom: u16,
+    pub left: u16,
 }
 
-#[allow(unused)]
 impl Padding {
+    pub fn new(top: u16, right: u16, bottom: u16, left: u16) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+
+    pub fn symmetric(vertical: u16, horizontal: u16) -> Self {
+        Self {
+            top: vertical,
+            bottom: vertical,
+            left: horizontal,
+            right: horizontal,
+        }
+    }
+
+    pub fn all(value: u16) -> Self {
+        Self::from(value)
+    }
+
     /// (top, right, bottom, left) — for internal use by natural-size
     /// computations that need to add padding back after computing the
     /// container's inner content extent.
@@ -38,6 +58,12 @@ impl From<u16> for Padding {
             bottom: value,
             left: value,
         }
+    }
+}
+
+impl From<(u16, u16)> for Padding {
+    fn from((vertical, horizontal): (u16, u16)) -> Self {
+        Self::symmetric(vertical, horizontal)
     }
 }
 

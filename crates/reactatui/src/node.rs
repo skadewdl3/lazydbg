@@ -110,20 +110,15 @@ impl<'a> Widget for TuiNode<'a> {
     }
 }
 
+/// Render each fragment child into the full area (overlay semantics).
+///
+/// Fragments are produced by `if`/`for` control flow inside containers —
+/// their children are already individually sized by the parent container
+/// (Flex/Grid) that drives the layout. Splitting the area equally among
+/// fragment children has no meaningful semantic and produces broken output;
+/// rendering each into the full allocated area is correct.
 pub(crate) fn render_fragment(children: Vec<TuiNode<'_>>, area: Rect, buf: &mut Buffer) {
-    let count = children.len() as u16;
-    if count == 0 {
-        return;
-    }
-
-    let base = area.height / count;
-    let mut remainder = area.height % count;
-    let mut y = area.y;
     for child in children {
-        let extra = u16::from(remainder > 0);
-        remainder = remainder.saturating_sub(extra);
-        let height = base.saturating_add(extra);
-        child.render(Rect::new(area.x, y, area.width, height), buf);
-        y = y.saturating_add(height);
+        child.render(area, buf);
     }
 }

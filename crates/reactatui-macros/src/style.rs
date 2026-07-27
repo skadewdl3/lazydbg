@@ -64,6 +64,7 @@ enum StyleValueKind {
     SizeAuto,
     NamedColor(&'static str),
     Rgb(Expr, Expr, Expr),
+    Indexed(Expr),
     #[allow(dead_code)]
     Flag(String, Span),
     If {
@@ -357,6 +358,9 @@ fn emit_color(value: StyleValueKind) -> syn::Result<TokenStream2> {
         StyleValueKind::Rgb(r, g, b) => {
             quote! { ::ratatui::style::Color::Rgb((#r) as u8, (#g) as u8, (#b) as u8) }
         }
+        StyleValueKind::Indexed(idx) => {
+            quote! { ::ratatui::style::Color::Indexed((#idx) as u8) }
+        }
         StyleValueKind::Expr(expr) => {
             quote! { #expr }
         }
@@ -417,17 +421,38 @@ fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2>
                 "an `if` without an `else` can only be used as a top-level property value",
             ));
         }
-        StyleValueKind::SizeAuto if method == "size" => {
+        StyleValueKind::SizeAuto if matches!(method, "size" | "width" | "height") => {
             quote! { ::reactatui::layout::Size::Auto }
         }
-        StyleValueKind::Expr(expr) if method == "size" => {
+        StyleValueKind::Expr(expr) if matches!(method, "size" | "width" | "height") => {
             quote! { ::core::convert::Into::<::reactatui::layout::Size>::into(#expr) }
         }
-        StyleValueKind::Expr(expr) if method == "shrink" => {
+        StyleValueKind::Expr(expr) if matches!(method, "grow" | "shrink") => {
             quote! { (#expr) as f32 }
         }
         StyleValueKind::Expr(expr)
-            if matches!(method, "column" | "row" | "column_span" | "row_span") =>
+            if matches!(
+                method,
+                "column"
+                    | "row"
+                    | "column_span"
+                    | "row_span"
+                    | "column_end"
+                    | "row_end"
+                    | "column_start"
+                    | "row_start"
+                    | "gap"
+                    | "gap_x"
+                    | "gap_y"
+                    | "min_width"
+                    | "max_width"
+                    | "min_height"
+                    | "max_height"
+                    | "padding_top"
+                    | "padding_right"
+                    | "padding_bottom"
+                    | "padding_left"
+            ) =>
         {
             quote! { (#expr) as usize }
         }
@@ -437,10 +462,10 @@ fn emit_layout(method: &str, value: StyleValueKind) -> syn::Result<TokenStream2>
         StyleValueKind::SizeAuto => {
             return Err(syn::Error::new(
                 Span::call_site(),
-                "`auto` is only valid for `size`",
+                "`auto` is only valid for `size`, `width`, or `height`",
             ));
         }
-        StyleValueKind::NamedColor(_) | StyleValueKind::Rgb(..) => {
+        StyleValueKind::NamedColor(_) | StyleValueKind::Rgb(..) | StyleValueKind::Indexed(..) => {
             return Err(syn::Error::new(
                 Span::call_site(),
                 "expected a layout value",
@@ -486,6 +511,13 @@ fn parse_color_value(input: ParseStream) -> syn::Result<StyleValueKind> {
             let b = it.next().unwrap();
             return Ok(StyleValueKind::Rgb(r, g, b));
         }
+        if word == "indexed" && fork.peek(syn::token::Paren) {
+            let content;
+            syn::parenthesized!(content in fork);
+            let idx: Expr = content.parse()?;
+            input.advance_to(&fork);
+            return Ok(StyleValueKind::Indexed(idx));
+        }
         if let Some(variant) = named_color(&word.to_ascii_lowercase()) {
             input.advance_to(&fork);
             return Ok(StyleValueKind::NamedColor(variant));
@@ -497,8 +529,84 @@ fn parse_color_value(input: ParseStream) -> syn::Result<StyleValueKind> {
             e.span(),
             format!(
                 "expected a color here — try a named color (`green`, `dark-gray`, ...), \
-                 `rgb(r, g, b)`, or a `Color` expression — {e}"
+                 `rgb(r, g, b)`, `indexed(n)`, or a `Color` expression — {e}"
             ),
+        )
+    })?;
+    Ok(StyleValueKind::Expr(expr))
+}
+
+fn parse_layout_value(key: &str, input: ParseStream) -> syn::Result<StyleValueKind> {
+    if input.peek(Token![if]) {
+        return parse_if_value(input, |i| parse_layout_value(key, i));
+    }
+    let fork = input.fork();
+    if let Ok((word, _)) = read_kebab_word(&fork) {
+        let w = word.to_ascii_lowercase();
+        match key {
+            "size" | "width" | "height" => {
+                if w == "auto" {
+                    input.advance_to(&fork);
+                    return Ok(StyleValueKind::SizeAuto);
+                }
+            }
+            "align_items" | "align_self" | "justify_items" | "justify_self" => {
+                let expr = match w.as_str() {
+                    "start" => Some(quote! { ::reactatui::layout::Align::Start }),
+                    "center" => Some(quote! { ::reactatui::layout::Align::Center }),
+                    "end" => Some(quote! { ::reactatui::layout::Align::End }),
+                    "stretch" => Some(quote! { ::reactatui::layout::Align::Stretch }),
+                    _ => None,
+                };
+                if let Some(e) = expr {
+                    input.advance_to(&fork);
+                    return Ok(StyleValueKind::Expr(syn::parse2(e)?));
+                }
+            }
+            "justify_content" | "align_content" => {
+                let expr = match w.as_str() {
+                    "start" => Some(quote! { ::reactatui::layout::Justify::Start }),
+                    "center" => Some(quote! { ::reactatui::layout::Justify::Center }),
+                    "end" => Some(quote! { ::reactatui::layout::Justify::End }),
+                    "space_between" | "space-between" => {
+                        Some(quote! { ::reactatui::layout::Justify::SpaceBetween })
+                    }
+                    "space_around" | "space-around" => {
+                        Some(quote! { ::reactatui::layout::Justify::SpaceAround })
+                    }
+                    "space_evenly" | "space-evenly" => {
+                        Some(quote! { ::reactatui::layout::Justify::SpaceEvenly })
+                    }
+                    _ => None,
+                };
+                if let Some(e) = expr {
+                    input.advance_to(&fork);
+                    return Ok(StyleValueKind::Expr(syn::parse2(e)?));
+                }
+            }
+            "direction" | "flex_direction" => {
+                let expr = match w.as_str() {
+                    "horizontal" | "row" => {
+                        Some(quote! { ::ratatui::layout::Direction::Horizontal })
+                    }
+                    "vertical" | "column" => {
+                        Some(quote! { ::ratatui::layout::Direction::Vertical })
+                    }
+                    _ => None,
+                };
+                if let Some(e) = expr {
+                    input.advance_to(&fork);
+                    return Ok(StyleValueKind::Expr(syn::parse2(e)?));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let expr: Expr = input.parse().map_err(|e| {
+        syn::Error::new(
+            e.span(),
+            format!("expected a value expression for `{key}` — {e}"),
         )
     })?;
     Ok(StyleValueKind::Expr(expr))
@@ -568,14 +676,8 @@ impl Parse for StyleEntry {
         })?;
 
         let value = match key.as_str() {
-            "size" => parse_size_value(input)?,
             "color" | "fg" | "background" | "bg" | "underline_color" => parse_color_value(input)?,
-            _ => StyleValueKind::Expr(input.parse().map_err(|e| {
-                syn::Error::new(
-                    e.span(),
-                    format!("expected a value expression for `{raw_key}` — {e}"),
-                )
-            })?),
+            _ => parse_layout_value(&key, input)?,
         };
 
         Ok(StyleEntry::KeyValue {
@@ -620,21 +722,42 @@ fn lookup_key(name: &str) -> Option<(Target, &'static str)> {
         "bg" | "background" => (Color, "bg"),
         "underline_color" => (Color, "underline_color"),
         "add_modifier" => (Color, "add_modifier"),
-        "remove_modifier" => (Color, "remove_modifier"),
+        "remove_modifier" | "sub_modifier" => (Color, "remove_modifier"),
+        "patch" => (Color, "patch"),
 
+        "direction" | "flex_direction" => (Layout, "direction"),
         "justify_content" => (Layout, "justify_content"),
         "align_content" => (Layout, "align_content"),
         "align_items" => (Layout, "align_items"),
         "justify_items" => (Layout, "justify_items"),
+        "gap" => (Layout, "gap"),
+        "gap_x" | "column_gap" => (Layout, "gap_x"),
+        "gap_y" | "row_gap" => (Layout, "gap_y"),
+        "padding" => (Layout, "padding"),
+        "padding_top" | "pad_top" => (Layout, "padding_top"),
+        "padding_right" | "pad_right" => (Layout, "padding_right"),
+        "padding_bottom" | "pad_bottom" => (Layout, "padding_bottom"),
+        "padding_left" | "pad_left" => (Layout, "padding_left"),
+        "columns" | "grid_template_columns" => (Layout, "columns"),
+        "rows" | "grid_template_rows" => (Layout, "rows"),
+
         "align_self" => (Layout, "align_self"),
         "justify_self" => (Layout, "justify_self"),
         "size" => (Layout, "size"),
-        "shrink" => (Layout, "shrink"),
-        "gap" => (Layout, "gap"),
-        "column" => (Layout, "column"),
-        "row" => (Layout, "row"),
-        "column_span" => (Layout, "column_span"),
-        "row_span" => (Layout, "row_span"),
+        "width" => (Layout, "width"),
+        "height" => (Layout, "height"),
+        "min_width" => (Layout, "min_width"),
+        "max_width" => (Layout, "max_width"),
+        "min_height" => (Layout, "min_height"),
+        "max_height" => (Layout, "max_height"),
+        "grow" | "flex_grow" => (Layout, "grow"),
+        "shrink" | "flex_shrink" => (Layout, "shrink"),
+        "column" | "column_start" | "grid_column_start" => (Layout, "column"),
+        "row" | "row_start" | "grid_row_start" => (Layout, "row"),
+        "column_span" | "grid_column_span" => (Layout, "column_span"),
+        "row_span" | "grid_row_span" => (Layout, "row_span"),
+        "column_end" | "grid_column_end" => (Layout, "column_end"),
+        "row_end" | "grid_row_end" => (Layout, "row_end"),
 
         _ => return None,
     })
@@ -648,6 +771,10 @@ const ALL_KEYS: &[&str] = &[
     "underline-color",
     "add-modifier",
     "remove-modifier",
+    "sub-modifier",
+    "patch",
+    "direction",
+    "flex-direction",
     "justify-content",
     "align-content",
     "align-items",
@@ -655,12 +782,48 @@ const ALL_KEYS: &[&str] = &[
     "align-self",
     "justify-self",
     "size",
+    "width",
+    "height",
+    "min-width",
+    "max-width",
+    "min-height",
+    "max-height",
+    "grow",
+    "flex-grow",
     "shrink",
+    "flex-shrink",
     "gap",
+    "gap-x",
+    "column-gap",
+    "gap-y",
+    "row-gap",
+    "padding",
+    "padding-top",
+    "pad-top",
+    "padding-right",
+    "pad-right",
+    "padding-bottom",
+    "pad-bottom",
+    "padding-left",
+    "pad-left",
+    "columns",
+    "grid-template-columns",
+    "rows",
+    "grid-template-rows",
     "column",
+    "column-start",
+    "grid-column-start",
     "row",
+    "row-start",
+    "grid-row-start",
     "column-span",
+    "grid-column-span",
     "row-span",
+    "grid-row-span",
+    "column-end",
+    "grid-column-end",
+    "row-end",
+    "grid-row-end",
 ];
 
 /// Bare-word flags, e.g. `bold` instead of `add_modifier: Modifier::BOLD`.
@@ -691,7 +854,7 @@ fn lookup_flag(name: &str) -> Option<(Target, TokenStream2)> {
             Color,
             quote! { add_modifier(::ratatui::style::Modifier::RAPID_BLINK) },
         ),
-        "reversed" => (
+        "reversed" | "reverse" => (
             Color,
             quote! { add_modifier(::ratatui::style::Modifier::REVERSED) },
         ),
@@ -699,10 +862,49 @@ fn lookup_flag(name: &str) -> Option<(Target, TokenStream2)> {
             Color,
             quote! { add_modifier(::ratatui::style::Modifier::HIDDEN) },
         ),
-        "crossed_out" => (
+        "crossed_out" | "strikethrough" => (
             Color,
             quote! { add_modifier(::ratatui::style::Modifier::CROSSED_OUT) },
         ),
+
+        // Remove modifier flags
+        "not_bold" | "no_bold" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::BOLD) },
+        ),
+        "not_dim" | "no_dim" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::DIM) },
+        ),
+        "not_italic" | "no_italic" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::ITALIC) },
+        ),
+        "not_underlined" | "no_underlined" | "not_underline" | "no_underline" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::UNDERLINED) },
+        ),
+        "not_slow_blink" | "no_slow_blink" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::SLOW_BLINK) },
+        ),
+        "not_rapid_blink" | "no_rapid_blink" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::RAPID_BLINK) },
+        ),
+        "not_reversed" | "no_reversed" | "not_reverse" | "no_reverse" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::REVERSED) },
+        ),
+        "not_hidden" | "no_hidden" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::HIDDEN) },
+        ),
+        "not_crossed_out" | "no_crossed_out" | "not_strikethrough" | "no_strikethrough" => (
+            Color,
+            quote! { remove_modifier(::ratatui::style::Modifier::CROSSED_OUT) },
+        ),
+
         "ignore" => (Layout, quote! { ignore() }),
         _ => return None,
     })

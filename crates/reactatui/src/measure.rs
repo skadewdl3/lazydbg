@@ -16,6 +16,8 @@ pub struct Measured<'a> {
     pub probe_area: Rect,
     pub content_width: u16,
     pub content_height: u16,
+    pub region_start: usize,
+    pub region_end: usize,
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
@@ -24,8 +26,10 @@ pub struct Measured<'a> {
 pub fn measure_node<'a>(node: TuiNode<'a>, probe_area: Rect) -> Measured<'a> {
     use ratatui::widgets::Widget;
 
+    let start_idx = crate::hooks::mouse_region_count();
     let mut scratch = Buffer::empty(probe_area);
     node.render(probe_area, &mut scratch);
+    let end_idx = crate::hooks::mouse_region_count();
 
     let mut min_x = probe_area.x + probe_area.width;
     let mut min_y = probe_area.y + probe_area.height;
@@ -56,6 +60,8 @@ pub fn measure_node<'a>(node: TuiNode<'a>, probe_area: Rect) -> Measured<'a> {
         probe_area,
         content_width,
         content_height,
+        region_start: start_idx,
+        region_end: end_idx,
         _marker: std::marker::PhantomData,
     }
 }
@@ -75,4 +81,20 @@ pub fn blit_measured(measured: &Measured<'_>, target: Rect, buf: &mut Buffer) {
             buf[(target.x + x, target.y + y)] = src.clone();
         }
     }
+
+    let dx = target.x as i32 - src_x as i32;
+    let dy = target.y as i32 - src_y as i32;
+    crate::hooks::transform_mouse_regions(
+        measured.region_start,
+        measured.region_end,
+        dx,
+        dy,
+        Some(target),
+    );
+}
+
+/// Call this when a Measured node is discarded without being blitted,
+/// so its mouse regions don't accidentally trigger at their probe coordinates.
+pub fn cull_measured(measured: &Measured<'_>) {
+    crate::hooks::cull_mouse_regions(measured.region_start, measured.region_end);
 }

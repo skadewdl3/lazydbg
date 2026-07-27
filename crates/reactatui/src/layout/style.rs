@@ -21,9 +21,11 @@ pub enum Justify {
     SpaceEvenly,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Style {
     // ---- Container-level ----
+    /// Flex direction (Horizontal / Vertical).
+    pub direction: Option<ratatui::layout::Direction>,
     /// Main axis (flex) / column axis (grid) distribution of leftover space.
     pub justify_content: Justify,
     /// Cross axis (flex, unused without wrap) / row axis (grid) distribution.
@@ -32,10 +34,18 @@ pub struct Style {
     pub align_items: Align,
     /// Default column-axis alignment for children (grid only).
     pub justify_items: Align,
-    /// Container-level: gap between items. For Grid, this sets both the
-    /// column gap and row gap uniformly (there's no way to express
-    /// asymmetric gaps through `style!` — do that by hand if you ever need it).
+    /// Container-level: gap between items (applies to both axes if gap_x/gap_y not specified).
     pub gap: u16,
+    /// Column/Horizontal gap override.
+    pub gap_x: Option<u16>,
+    /// Row/Vertical gap override.
+    pub gap_y: Option<u16>,
+    /// Padding around the contents of this container.
+    pub padding: Option<crate::layout::Padding>,
+    /// Grid container columns specification.
+    pub columns: Option<Vec<Size>>,
+    /// Grid container rows specification.
+    pub rows: Option<Vec<Size>>,
 
     // ---- Item-level ----
     /// Overrides the container's `align_items` for this item only.
@@ -43,48 +53,74 @@ pub struct Style {
     /// Overrides the container's `justify_items` for this item only (grid only).
     pub justify_self: Option<Align>,
     /// Item-level, Flex only: pulls this item out of normal flex flow
-    /// entirely — it renders on top, full area, and positions itself (e.g.
-    /// a `Dialog` centering within the space it's given). Grid ignores this.
+    /// entirely — it renders on top, full area, and positions itself.
     pub ignore: bool,
 
-    /// Size along the primary axis. Shared, single-name property across
-    /// Flex and Grid:
-    /// - `Auto` (the default, everywhere): measure intrinsic content.
-    /// - `Length`/`Percent`: pin an explicit size.
-    /// - `Fr(n)`: grow to take a proportional share of leftover space.
-    ///   This is the *only* way an item grows — nothing grows implicitly.
-    ///   In Grid, `Fr` on an item has no effect (grid tracks, not items,
-    ///   carry `Fr` sizing); it's only meaningful on Flex items.
+    /// Size along the primary axis.
     pub size: Size,
-    /// Flex-only: how eagerly this item shrinks below `size` on overflow,
-    /// weighted the CSS way (`shrink * basis`). No effect in Grid — grid
-    /// tracks never shrink below their resolved size, same as CSS Grid.
+    /// Explicit width override.
+    pub width: Option<Size>,
+    /// Explicit height override.
+    pub height: Option<Size>,
+    /// Minimum width constraint.
+    pub min_width: Option<u16>,
+    /// Maximum width constraint.
+    pub max_width: Option<u16>,
+    /// Minimum height constraint.
+    pub min_height: Option<u16>,
+    /// Maximum height constraint.
+    pub max_height: Option<u16>,
+    /// Flex grow factor.
+    pub grow: Option<f32>,
+    /// Flex shrink factor.
     pub shrink: f32,
 
-    /// Grid placement. `None` triggers CSS-grid-style auto-placement.
+    /// Grid placement column start (0-indexed).
     pub column: Option<usize>,
+    /// Grid placement row start (0-indexed).
     pub row: Option<usize>,
+    /// Grid column span (default 1).
     pub column_span: usize,
+    /// Grid row span (default 1).
     pub row_span: usize,
+    /// Grid placement column end (0-indexed line).
+    pub column_end: Option<usize>,
+    /// Grid placement row end (0-indexed line).
+    pub row_end: Option<usize>,
 }
 
 impl Default for Style {
     fn default() -> Self {
         Self {
+            direction: None,
             justify_content: Justify::Start,
             align_content: Justify::Start,
             align_items: Align::Stretch,
             justify_items: Align::Stretch,
             gap: 0,
+            gap_x: None,
+            gap_y: None,
+            padding: None,
+            columns: None,
+            rows: None,
             align_self: None,
             justify_self: None,
             ignore: false,
             size: Size::Auto,
+            width: None,
+            height: None,
+            min_width: None,
+            max_width: None,
+            min_height: None,
+            max_height: None,
+            grow: None,
             shrink: 1.0,
             column: None,
             row: None,
             column_span: 1,
             row_span: 1,
+            column_end: None,
+            row_end: None,
         }
     }
 }
@@ -94,6 +130,13 @@ impl Style {
         Self::default()
     }
 
+    pub fn direction(mut self, d: impl Into<ratatui::layout::Direction>) -> Self {
+        self.direction = Some(d.into());
+        self
+    }
+    pub fn flex_direction(self, d: impl Into<ratatui::layout::Direction>) -> Self {
+        self.direction(d)
+    }
     pub fn justify_content(mut self, j: Justify) -> Self {
         self.justify_content = j;
         self
@@ -114,6 +157,75 @@ impl Style {
         self.gap = gap;
         self
     }
+    pub fn gap_x(mut self, gap: u16) -> Self {
+        self.gap_x = Some(gap);
+        self
+    }
+    pub fn column_gap(self, gap: u16) -> Self {
+        self.gap_x(gap)
+    }
+    pub fn gap_y(mut self, gap: u16) -> Self {
+        self.gap_y = Some(gap);
+        self
+    }
+    pub fn row_gap(self, gap: u16) -> Self {
+        self.gap_y(gap)
+    }
+    pub fn padding(mut self, padding: impl Into<crate::layout::Padding>) -> Self {
+        self.padding = Some(padding.into());
+        self
+    }
+    pub fn padding_top(mut self, top: u16) -> Self {
+        let mut p = self.padding.unwrap_or_default();
+        p.top = top;
+        self.padding = Some(p);
+        self
+    }
+    pub fn pad_top(self, top: u16) -> Self {
+        self.padding_top(top)
+    }
+    pub fn padding_right(mut self, right: u16) -> Self {
+        let mut p = self.padding.unwrap_or_default();
+        p.right = right;
+        self.padding = Some(p);
+        self
+    }
+    pub fn pad_right(self, right: u16) -> Self {
+        self.padding_right(right)
+    }
+    pub fn padding_bottom(mut self, bottom: u16) -> Self {
+        let mut p = self.padding.unwrap_or_default();
+        p.bottom = bottom;
+        self.padding = Some(p);
+        self
+    }
+    pub fn pad_bottom(self, bottom: u16) -> Self {
+        self.padding_bottom(bottom)
+    }
+    pub fn padding_left(mut self, left: u16) -> Self {
+        let mut p = self.padding.unwrap_or_default();
+        p.left = left;
+        self.padding = Some(p);
+        self
+    }
+    pub fn pad_left(self, left: u16) -> Self {
+        self.padding_left(left)
+    }
+    pub fn columns(mut self, cols: impl crate::layout::size::IntoSizeList) -> Self {
+        self.columns = Some(cols.into_size_list());
+        self
+    }
+    pub fn grid_template_columns(self, cols: impl crate::layout::size::IntoSizeList) -> Self {
+        self.columns(cols)
+    }
+    pub fn rows(mut self, rows: impl crate::layout::size::IntoSizeList) -> Self {
+        self.rows = Some(rows.into_size_list());
+        self
+    }
+    pub fn grid_template_rows(self, rows: impl crate::layout::size::IntoSizeList) -> Self {
+        self.rows(rows)
+    }
+
     pub fn align_self(mut self, a: Align) -> Self {
         self.align_self = Some(a);
         self
@@ -122,8 +234,6 @@ impl Style {
         self.justify_self = Some(a);
         self
     }
-    /// Flag-style setter — presence means "ignore", same convention as
-    /// `bold`/`italic`/etc. in the `style!` macro.
     pub fn ignore(mut self) -> Self {
         self.ignore = true;
         self
@@ -132,25 +242,109 @@ impl Style {
         self.size = s.into();
         self
     }
+    pub fn width(mut self, w: impl Into<Size>) -> Self {
+        self.width = Some(w.into());
+        self
+    }
+    pub fn height(mut self, h: impl Into<Size>) -> Self {
+        self.height = Some(h.into());
+        self
+    }
+    pub fn min_width(mut self, w: u16) -> Self {
+        self.min_width = Some(w);
+        self
+    }
+    pub fn max_width(mut self, w: u16) -> Self {
+        self.max_width = Some(w);
+        self
+    }
+    pub fn min_height(mut self, h: u16) -> Self {
+        self.min_height = Some(h);
+        self
+    }
+    pub fn max_height(mut self, h: u16) -> Self {
+        self.max_height = Some(h);
+        self
+    }
+    pub fn grow(mut self, g: f32) -> Self {
+        self.grow = Some(g.max(0.0));
+        self
+    }
+    pub fn flex_grow(self, g: f32) -> Self {
+        self.grow(g)
+    }
     pub fn shrink(mut self, s: f32) -> Self {
         self.shrink = s.max(0.0);
         self
+    }
+    pub fn flex_shrink(self, s: f32) -> Self {
+        self.shrink(s)
     }
     pub fn column(mut self, c: usize) -> Self {
         self.column = Some(c);
         self
     }
+    pub fn column_start(self, c: usize) -> Self {
+        self.column(c)
+    }
+    pub fn grid_column_start(self, c: usize) -> Self {
+        self.column(c)
+    }
     pub fn row(mut self, r: usize) -> Self {
         self.row = Some(r);
         self
+    }
+    pub fn row_start(self, r: usize) -> Self {
+        self.row(r)
+    }
+    pub fn grid_row_start(self, r: usize) -> Self {
+        self.row(r)
     }
     pub fn column_span(mut self, s: usize) -> Self {
         self.column_span = s.max(1);
         self
     }
+    pub fn grid_column_span(self, s: usize) -> Self {
+        self.column_span(s)
+    }
     pub fn row_span(mut self, s: usize) -> Self {
         self.row_span = s.max(1);
         self
+    }
+    pub fn grid_row_span(self, s: usize) -> Self {
+        self.row_span(s)
+    }
+    pub fn column_end(mut self, c: usize) -> Self {
+        self.column_end = Some(c);
+        self
+    }
+    pub fn grid_column_end(self, c: usize) -> Self {
+        self.column_end(c)
+    }
+    pub fn row_end(mut self, r: usize) -> Self {
+        self.row_end = Some(r);
+        self
+    }
+    pub fn grid_row_end(self, r: usize) -> Self {
+        self.row_end(r)
+    }
+
+    pub fn resolved_column_span(&self) -> usize {
+        if let (Some(start), Some(end)) = (self.column, self.column_end) {
+            if end > start {
+                return end - start;
+            }
+        }
+        self.column_span
+    }
+
+    pub fn resolved_row_span(&self) -> usize {
+        if let (Some(start), Some(end)) = (self.row, self.row_end) {
+            if end > start {
+                return end - start;
+            }
+        }
+        self.row_span
     }
 
     pub fn resolve_align(container: &Style, item: &Style) -> Align {
@@ -160,6 +354,22 @@ impl Style {
     pub fn resolve_justify_self(container: &Style, item: &Style) -> Align {
         item.justify_self.unwrap_or(container.justify_items)
     }
+}
+
+pub fn clamp_rect(mut rect: Rect, style: &Style) -> Rect {
+    if let Some(min_w) = style.min_width {
+        rect.width = rect.width.max(min_w);
+    }
+    if let Some(max_w) = style.max_width {
+        rect.width = rect.width.min(max_w);
+    }
+    if let Some(min_h) = style.min_height {
+        rect.height = rect.height.max(min_h);
+    }
+    if let Some(max_h) = style.max_height {
+        rect.height = rect.height.min(max_h);
+    }
+    rect
 }
 
 /// Position measured content within `cell` on both axes independently

@@ -63,12 +63,6 @@ fn apply_scroll_delta(offset: &mut u16, delta: i16) {
 
 fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
     let offset = use_state::<u16>(|| 0);
-    let keys = use_key();
-
-    keybindings!(keys, {
-        "down" | "j" => move || offset.with_mut(|o| *o = o.saturating_add(1)),
-        "up" | "k" => move || offset.with_mut(|o| *o = o.saturating_sub(1)),
-    });
 
     let raw_offset = offset.get();
 
@@ -85,6 +79,7 @@ fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
             None,
             Some(Box::new(move |delta: i16| {
                 offset.with_mut(|o| apply_scroll_delta(o, delta));
+                ::reactatui::hooks::Propagation::Stop
             })),
         );
 
@@ -139,6 +134,8 @@ fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
                 node.render(target, buf);
             }
             row = row.saturating_add(height);
+        } else if let Some(measured) = &first_prerendered {
+            ::reactatui::measure::cull_measured(measured);
         }
 
         let skip = first_index.saturating_sub(1);

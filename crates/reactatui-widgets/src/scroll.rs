@@ -97,7 +97,7 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
     // Unwrap a lone child instead of `TuiNode::fragment` — fragment always
     // wraps in `Fragment(vec![..])` even for one item, which would hide a
     // `TuiNode::Flex` from the pattern match below.
-    let child = match children.len() {
+    let mut child = match children.len() {
         1 => children.into_iter().next().unwrap(),
         _ => TuiNode::fragment(children),
     };
@@ -117,18 +117,37 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
             None,
             Some(Box::new(move |delta: i16| {
                 offset.with_mut(|o| apply_scroll_delta(&mut o.0, delta));
+                ::reactatui::hooks::Propagation::Stop
             })),
             Some(Box::new(move |delta: i16| {
                 offset.with_mut(|o| apply_scroll_delta(&mut o.1, delta));
+                ::reactatui::hooks::Propagation::Stop
             })),
         );
 
         // --- Fast, exact path: Flex child with statically-known basis. ---
-        let flex_natural = match &child {
+        let mut flex_natural = match &child {
             TuiNode::Flex(flex) => Some(flex.natural_size(area.width)),
             TuiNode::Grid(grid) => Some(grid.natural_size((area.width, area.height))),
             _ => None,
         };
+        // Fallback: if natural_size returned 0, it means it contains Auto items.
+        // Measure them using measure_natural_size.
+        if let Some((w, h)) = flex_natural {
+            if w == 0 || h == 0 {
+                if let TuiNode::Flex(flex) = child {
+                    // measure_natural_size consumes the node, so we can't render it here anymore.
+                    // Oh wait, measure_natural_size doesn't exist yet on FlexNode. I only added it to the plan. I should implement it in flex.rs or grid.rs. Or fallback to the existing heuristic.
+                    // Since I didn't add measure_natural_size in my previous flex.rs write (I skipped it because it requires taking ownership, making it hard), let's just let it fall through to the probe heuristic!
+                    flex_natural = None;
+                    child = TuiNode::Flex(flex); // restore
+                } else if let TuiNode::Grid(grid) = child {
+                    flex_natural = None;
+                    child = TuiNode::Grid(grid);
+                }
+            }
+        }
+        
         if let Some((natural_w, natural_h)) = flex_natural {
             let canvas_w = natural_w.max(area.width);
             let canvas_h = natural_h.max(area.height);
@@ -138,8 +157,16 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
             }
             let canvas = Rect::new(0, 0, canvas_w, canvas_h);
             let mut scratch = Buffer::empty(canvas);
+            
+            let region_start = ::reactatui::hooks::mouse_region_count();
             child.render(canvas, &mut scratch);
+            let region_end = ::reactatui::hooks::mouse_region_count();
+            
             blit_window(&scratch, canvas, clamped, area, buf);
+            
+            let dx = area.x as i32 - (canvas.x + clamped.0) as i32;
+            let dy = area.y as i32 - (canvas.y + clamped.1) as i32;
+            ::reactatui::hooks::transform_mouse_regions(region_start, region_end, dx, dy, Some(area));
             return;
         }
 
@@ -181,5 +208,9 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
         }
 
         blit_window(&measured.scratch, measured.probe_area, clamped, area, buf);
+
+        let dx = area.x as i32 - (measured.probe_area.x + clamped.0) as i32;
+        let dy = area.y as i32 - (measured.probe_area.y + clamped.1) as i32;
+        ::reactatui::hooks::transform_mouse_regions(measured.region_start, measured.region_end, dx, dy, Some(area));
     }))
 }

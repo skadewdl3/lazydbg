@@ -49,8 +49,63 @@ pub fn parse_size(s: &str) -> Size {
         Size::Length(s.trim().parse().unwrap_or(0))
     }
 }
+
 pub fn parse_size_list(spec: &str) -> Vec<Size> {
-    spec.split(',').map(parse_size).collect()
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return Vec::new();
+    }
+    if spec.contains(',') {
+        spec.split(',').map(parse_size).collect()
+    } else {
+        spec.split_whitespace().map(parse_size).collect()
+    }
+}
+
+pub trait IntoSizeList {
+    fn into_size_list(self) -> Vec<Size>;
+}
+
+impl IntoSizeList for Vec<Size> {
+    fn into_size_list(self) -> Vec<Size> {
+        self
+    }
+}
+
+impl IntoSizeList for &[Size] {
+    fn into_size_list(self) -> Vec<Size> {
+        self.to_vec()
+    }
+}
+
+impl IntoSizeList for &str {
+    fn into_size_list(self) -> Vec<Size> {
+        parse_size_list(self)
+    }
+}
+
+impl IntoSizeList for String {
+    fn into_size_list(self) -> Vec<Size> {
+        parse_size_list(&self)
+    }
+}
+
+impl IntoSizeList for usize {
+    fn into_size_list(self) -> Vec<Size> {
+        vec![Size::Fr(1); self]
+    }
+}
+
+impl IntoSizeList for u16 {
+    fn into_size_list(self) -> Vec<Size> {
+        vec![Size::Fr(1); self as usize]
+    }
+}
+
+impl IntoSizeList for i32 {
+    fn into_size_list(self) -> Vec<Size> {
+        vec![Size::Fr(1); self.max(0) as usize]
+    }
 }
 
 /// Shared resolver for both Grid tracks and Flex's basis pass.

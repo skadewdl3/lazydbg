@@ -52,15 +52,19 @@ struct EventListener {
 
 /// A registered interactive screen region. Populated every render frame
 /// by `register_mouse_region` (called from macro-generated code).
+///
+/// Click and scroll handlers return `Propagation` so the dispatch loop
+/// can stop bubbling when a handler returns `Propagation::Stop`.
 struct MouseRegion {
     rect: Rect,
-    /// A stable id derived from the region's position — used for hover-enter tracking.
+    /// Stable id derived from the owning component + per-component registration
+    /// order — survives layout shifts caused by window resize.
     id: u64,
-    click_handler: Option<Box<dyn FnMut(MouseButton)>>,
+    click_handler: Option<Box<dyn FnMut(MouseButton) -> Propagation>>,
     mousein_handler: Option<Box<dyn FnMut()>>,
     mouseout_handler: Option<Box<dyn FnMut()>>,
-    scrollx_handler: Option<Box<dyn FnMut(i16)>>,
-    scrolly_handler: Option<Box<dyn FnMut(i16)>>,
+    scrollx_handler: Option<Box<dyn FnMut(i16) -> Propagation>>,
+    scrolly_handler: Option<Box<dyn FnMut(i16) -> Propagation>>,
 }
 
 #[derive(Default)]
@@ -80,11 +84,14 @@ struct HookRuntime {
     /// Maps a component ID to its ancestry path (the id_stack at the time of entry).
     component_paths: HashMap<u64, Rc<Vec<u64>>>,
     /// Bumped every time a `State` is mutated via `set`/`with_mut`.
-    /// Read by `use_computed` to decide whether to recompute.
+    /// Read by `use_memo` to decide whether to recompute.
     versions: HashMap<StateKey, u64>,
     chord_bindings: Vec<ChordBinding>,
     chord_pending: Vec<KeyEvent>,
     chord_last_event_at: Option<Instant>,
+    /// Per-component count of mouse regions registered this frame — used
+    /// to generate stable region IDs that survive layout shifts.
+    mouse_region_idx: HashMap<u64, u32>,
 }
 
 thread_local! {
@@ -107,27 +114,42 @@ pub fn begin_frame() {
         // so hover-enter detection works.
         rt.mouse_regions.clear();
         rt.chord_bindings.clear();
+        // Reset per-component mouse region counters for the new frame.
+        rt.mouse_region_idx.clear();
     });
 }
 
 /// Called from macro-generated render closures to record that an
 /// interactive element occupies `rect` this frame.
+///
+/// **Click and scroll handlers now return `Propagation`** so that bubbling
+/// can be stopped at the appropriate layer.
 #[doc(hidden)]
 pub fn register_mouse_region(
     rect: Rect,
-    click_handler: Option<Box<dyn FnMut(MouseButton)>>,
+    click_handler: Option<Box<dyn FnMut(MouseButton) -> Propagation>>,
     mousein_handler: Option<Box<dyn FnMut()>>,
     mouseout_handler: Option<Box<dyn FnMut()>>,
-    scrollx_handler: Option<Box<dyn FnMut(i16)>>,
-    scrolly_handler: Option<Box<dyn FnMut(i16)>>,
+    scrollx_handler: Option<Box<dyn FnMut(i16) -> Propagation>>,
+    scrolly_handler: Option<Box<dyn FnMut(i16) -> Propagation>>,
 ) {
-    // Derive a stable region id from its screen position.
-    let mut hasher = DefaultHasher::new();
-    rect.x.hash(&mut hasher);
-    rect.y.hash(&mut hasher);
-    rect.width.hash(&mut hasher);
-    rect.height.hash(&mut hasher);
-    let id = hasher.finish();
+    // Derive a stable ID from (component_id, per-component registration count).
+    // This survives layout shifts (window resize, scroll) because it doesn't
+    // encode absolute screen coordinates.
+    let id = RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let comp = *rt.id_stack.last().unwrap_or(&0);
+        let local_idx = {
+            let entry = rt.mouse_region_idx.entry(comp).or_insert(0);
+            let val = *entry;
+            *entry += 1;
+            val
+        };
+        let mut hasher = DefaultHasher::new();
+        comp.hash(&mut hasher);
+        local_idx.hash(&mut hasher);
+        hasher.finish()
+    });
 
     RUNTIME.with(|rt| {
         rt.borrow_mut().mouse_regions.push(MouseRegion {
@@ -142,105 +164,238 @@ pub fn register_mouse_region(
     });
 }
 
+/// Returns the current number of registered mouse regions. Used to track
+/// regions registered during a temporary measurement pass.
+pub fn mouse_region_count() -> usize {
+    RUNTIME.with(|rt| rt.borrow().mouse_regions.len())
+}
+
+/// Transforms mouse regions that were registered into a temporary buffer
+/// (e.g. during `measure_node`) so they match the final blitted screen coordinates.
+/// `dx` and `dy` are the translations applied to the top-left of the original probe area.
+/// `clip` is the final screen bounding box; any region outside it is truncated.
+pub fn transform_mouse_regions(start: usize, end: usize, dx: i32, dy: i32, clip: Option<Rect>) {
+    RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let end = end.min(rt.mouse_regions.len());
+        for i in start..end {
+            let r = &mut rt.mouse_regions[i];
+            let x = (r.rect.x as i32 + dx).clamp(0, u16::MAX as i32) as u16;
+            let y = (r.rect.y as i32 + dy).clamp(0, u16::MAX as i32) as u16;
+            let shifted = Rect::new(x, y, r.rect.width, r.rect.height);
+            if let Some(c) = clip {
+                r.rect = shifted.intersection(c);
+            } else {
+                r.rect = shifted;
+            }
+        }
+    });
+}
+
+/// Hides mouse regions that were registered during a measurement pass but
+/// never ultimately blitted to the screen (e.g. discarded by layout).
+pub fn cull_mouse_regions(start: usize, end: usize) {
+    RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let end = end.min(rt.mouse_regions.len());
+        for i in start..end {
+            let r = &mut rt.mouse_regions[i];
+            r.rect.width = 0;
+            r.rect.height = 0;
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Mouse dispatch helpers
+// ---------------------------------------------------------------------------
+
+#[inline]
+fn rect_area(r: Rect) -> u32 {
+    u32::from(r.width) * u32::from(r.height)
+}
+
+/// Returns true when `outer` completely contains `inner` (not necessarily
+/// a *strict* superset — equal rects pass too).
+#[inline]
+fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
+    outer.x <= inner.x
+        && outer.y <= inner.y
+        && outer.x.saturating_add(outer.width) >= inner.x.saturating_add(inner.width)
+        && outer.y.saturating_add(outer.height) >= inner.y.saturating_add(inner.height)
+}
+
+/// Collect mouse-region indices on the bubbling path for the point `(col, row)`.
+///
+/// The "target" is the smallest-area region containing the point (innermost
+/// child in a correctly-laid-out tree). Only regions that fully contain the
+/// target's rect are considered ancestors and included in the path.
+/// Result is sorted innermost-first (ascending area) — the natural bubbling
+/// order for DOM-style event propagation.
+///
+/// `has_handler` filters to only regions that have a relevant handler set.
+fn bubbling_path(col: u16, row: u16, has_handler: impl Fn(&MouseRegion) -> bool) -> Vec<usize> {
+    RUNTIME.with(|rt| {
+        let rt = rt.borrow();
+
+        let mut candidates: Vec<(usize, u32)> = rt
+            .mouse_regions
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| contains(r.rect, col, row) && has_handler(r))
+            .map(|(i, r)| (i, rect_area(r.rect)))
+            .collect();
+
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+
+        // Smallest area = innermost = target
+        candidates.sort_by_key(|(_, area)| *area);
+        let target_rect = rt.mouse_regions[candidates[0].0].rect;
+
+        // Keep target + any region whose rect contains the target rect (true ancestors)
+        candidates
+            .into_iter()
+            .filter(|(i, _)| rect_contains_rect(rt.mouse_regions[*i].rect, target_rect))
+            .map(|(i, _)| i)
+            .collect()
+    })
+}
+
 /// Process one mouse event. Call this in your event loop alongside
 /// `dispatch_key`.
 ///
-/// - `MouseEventKind::Down(button)` → fires `on:click` handlers for every
-///   region that contains the cursor.
-/// - `MouseEventKind::Moved` → fires `on:mousein` handlers for regions the
-///   cursor has just **entered** this frame, and `on:mouseout` handlers for
-///   regions the cursor just exited.
+/// **Bubbling semantics**: click and scroll events are dispatched to the
+/// innermost (smallest-area) region containing the cursor first, then bubble
+/// outward through ancestor regions. A handler returning `Propagation::Stop`
+/// halts the bubble. Hover (`mousein`/`mouseout`) events fire for every
+/// region whose hover state changes (no propagation concept — they fire
+/// independently per region).
 pub fn dispatch_mouse(event: MouseEvent) {
-    let mut click_handlers_to_run = Vec::new();
+    let col = event.column;
+    let row = event.row;
+
+    match event.kind {
+        MouseEventKind::Down(button) => {
+            dispatch_mouse_click(col, row, button);
+        }
+        MouseEventKind::ScrollUp => {
+            dispatch_mouse_scroll_y(col, row, -1);
+        }
+        MouseEventKind::ScrollDown => {
+            dispatch_mouse_scroll_y(col, row, 1);
+        }
+        MouseEventKind::ScrollLeft => {
+            dispatch_mouse_scroll_x(col, row, -1);
+        }
+        MouseEventKind::ScrollRight => {
+            dispatch_mouse_scroll_x(col, row, 1);
+        }
+        MouseEventKind::Moved => {
+            dispatch_mouse_move(col, row);
+        }
+        _ => {}
+    }
+}
+
+fn dispatch_mouse_click(col: u16, row: u16, button: MouseButton) {
+    let indices = bubbling_path(col, row, |r| r.click_handler.is_some());
+    for i in indices {
+        let handler_opt = RUNTIME.with(|rt| {
+            rt.borrow_mut()
+                .mouse_regions
+                .get_mut(i)
+                .and_then(|r| r.click_handler.take())
+        });
+        if let Some(mut handler) = handler_opt {
+            let prop = handler(button);
+            RUNTIME.with(|rt| {
+                if let Some(r) = rt.borrow_mut().mouse_regions.get_mut(i) {
+                    r.click_handler = Some(handler);
+                }
+            });
+            if prop == Propagation::Stop {
+                break;
+            }
+        }
+    }
+}
+
+fn dispatch_mouse_scroll_y(col: u16, row: u16, delta: i16) {
+    let indices = bubbling_path(col, row, |r| r.scrolly_handler.is_some());
+    for i in indices {
+        let handler_opt = RUNTIME.with(|rt| {
+            rt.borrow_mut()
+                .mouse_regions
+                .get_mut(i)
+                .and_then(|r| r.scrolly_handler.take())
+        });
+        if let Some(mut handler) = handler_opt {
+            let prop = handler(delta);
+            RUNTIME.with(|rt| {
+                if let Some(r) = rt.borrow_mut().mouse_regions.get_mut(i) {
+                    r.scrolly_handler = Some(handler);
+                }
+            });
+            if prop == Propagation::Stop {
+                break;
+            }
+        }
+    }
+}
+
+fn dispatch_mouse_scroll_x(col: u16, row: u16, delta: i16) {
+    let indices = bubbling_path(col, row, |r| r.scrollx_handler.is_some());
+    for i in indices {
+        let handler_opt = RUNTIME.with(|rt| {
+            rt.borrow_mut()
+                .mouse_regions
+                .get_mut(i)
+                .and_then(|r| r.scrollx_handler.take())
+        });
+        if let Some(mut handler) = handler_opt {
+            let prop = handler(delta);
+            RUNTIME.with(|rt| {
+                if let Some(r) = rt.borrow_mut().mouse_regions.get_mut(i) {
+                    r.scrollx_handler = Some(handler);
+                }
+            });
+            if prop == Propagation::Stop {
+                break;
+            }
+        }
+    }
+}
+
+fn dispatch_mouse_move(col: u16, row: u16) {
     let mut mousein_handlers_to_run = Vec::new();
     let mut mouseout_handlers_to_run = Vec::new();
-    let mut scroll_handlers_to_run = Vec::new();
 
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
-        let col = event.column;
-        let row = event.row;
+        let prev = rt.prev_hovered.clone();
+        let mut now_hovered = HashSet::new();
 
-        match event.kind {
-            MouseEventKind::Down(button) => {
-                for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row)
-                        && let Some(handler) = region.click_handler.take()
-                    {
-                        click_handlers_to_run.push((handler, button));
+        for region in rt.mouse_regions.iter_mut() {
+            if contains(region.rect, col, row) {
+                now_hovered.insert(region.id);
+                // Fire on:mousein only when the cursor first enters.
+                if !prev.contains(&region.id) {
+                    if let Some(handler) = region.mousein_handler.take() {
+                        mousein_handlers_to_run.push(handler);
                     }
                 }
-            }
-            MouseEventKind::ScrollUp => {
-                for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrolly_handler.take()
-                    {
-                        scroll_handlers_to_run.push((handler, -1));
-                    }
+            } else if prev.contains(&region.id) {
+                // Fire on:mouseout when the cursor leaves.
+                if let Some(handler) = region.mouseout_handler.take() {
+                    mouseout_handlers_to_run.push(handler);
                 }
             }
-            MouseEventKind::ScrollDown => {
-                for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrolly_handler.take()
-                    {
-                        scroll_handlers_to_run.push((handler, 1));
-                    }
-                }
-            }
-            MouseEventKind::ScrollLeft => {
-                for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrollx_handler.take()
-                    {
-                        scroll_handlers_to_run.push((handler, -1));
-                    }
-                }
-            }
-            MouseEventKind::ScrollRight => {
-                for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row)
-                        && let Some(handler) = region.scrollx_handler.take()
-                    {
-                        scroll_handlers_to_run.push((handler, 1));
-                    }
-                }
-            }
-            MouseEventKind::Moved => {
-                // Snapshot prev_hovered to avoid simultaneous mut+immut borrow.
-                let prev = rt.prev_hovered.clone();
-                let mut now_hovered = HashSet::new();
-                for region in rt.mouse_regions.iter_mut() {
-                    if contains(region.rect, col, row) {
-                        now_hovered.insert(region.id);
-                        // Fire on:mousein only when the cursor first enters.
-                        if !prev.contains(&region.id)
-                            && let Some(handler) = region.mousein_handler.take()
-                        {
-                            mousein_handlers_to_run.push(handler);
-                        }
-                    } else {
-                        // Fire on:mouseout if it was previously hovered but now is not.
-                        if prev.contains(&region.id)
-                            && let Some(handler) = region.mouseout_handler.take()
-                        {
-                            mouseout_handlers_to_run.push(handler);
-                        }
-                    }
-                }
-                rt.prev_hovered = now_hovered;
-            }
-            _ => {}
         }
+        rt.prev_hovered = now_hovered;
     });
 
-    for (mut handler, button) in click_handlers_to_run {
-        handler(button);
-    }
-    for (mut handler, delta) in scroll_handlers_to_run {
-        handler(delta);
-    }
     for mut handler in mousein_handlers_to_run {
         handler();
     }
@@ -493,8 +648,7 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
     // event and wait for the next key, unless key_bindings has an
     // equally-or-more-specific handler for this exact event — in which
     // case leave the chord's pending state completely untouched and let
-    // key_bindings handle it. This is the branch that used to break
-    // `Propagation::Stop`: it used to swallow unconditionally here.
+    // key_bindings handle it.
     if let Some(depth) = partial_depth {
         let key_wins = key_depth.map_or(false, |kd| kd >= depth);
         if key_wins {
@@ -558,10 +712,10 @@ pub fn __enter_component(name: &'static str) -> ComponentGuard {
         rt.sibling_counters.push(0);
         rt.hook_indices.push(0);
 
-        if !rt.component_paths.contains_key(&id) {
-            let path_clone = Rc::new(rt.id_stack.clone());
-            rt.component_paths.insert(id, path_clone);
-        }
+        // Always update the ancestry path — the component may have moved
+        // in the tree (e.g. inside a conditional) since the last frame.
+        let path_clone = Rc::new(rt.id_stack.clone());
+        rt.component_paths.insert(id, path_clone);
     });
     ComponentGuard
 }
@@ -739,15 +893,18 @@ pub fn try_use_global<T: 'static>(key: &'static str) -> Option<State<T>> {
 /// Derives a value from another `State<T>` and caches it in its own
 /// hook slot, recomputed once every render.
 ///
+/// The `compute` closure receives a shared `&T` reference — it must not
+/// mutate the source (use `use_state` + explicit mutation for that).
+///
 /// Must be called unconditionally, in the same order, every render —
 /// same rule as `use_state`.
 pub fn use_computed<T: 'static, R: 'static>(
     source: State<T>,
-    compute: impl FnOnce(&mut T) -> R,
+    compute: impl FnOnce(&T) -> R,
 ) -> State<R> {
-    // Borrow `source` just long enough to compute the derived value,
-    // then drop the borrow before touching our own storage.
-    let value: R = source.with_mut(compute);
+    // Borrow `source` read-only — this does NOT bump the version counter,
+    // which is correct since we're only reading.
+    let value: R = source.with(compute);
 
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
@@ -789,11 +946,14 @@ pub fn use_computed<T: 'static, R: 'static>(
 /// slot. The `compute` closure only re-runs when `source` has been mutated
 /// (via `set`/`with_mut`).
 ///
+/// The `compute` closure receives a shared `&T` reference — it must not
+/// mutate the source (use `use_state` + explicit mutation for that).
+///
 /// Must be called unconditionally, in the same order, every render — same
 /// rule as `use_state`.
 pub fn use_memo<T: 'static, R: 'static>(
     source: State<T>,
-    compute: impl FnOnce(&mut T) -> R,
+    compute: impl FnOnce(&T) -> R,
 ) -> State<R> {
     // Claim this hook's slot first (bumps hook_indices like any other hook).
     let (component_id, index) = RUNTIME.with(|rt| {
@@ -822,9 +982,8 @@ pub fn use_memo<T: 'static, R: 'static>(
     let needs_recompute = !exists || last_seen_version != Some(current_version);
 
     if needs_recompute {
-        // No RUNTIME borrow is held across this call — safe to re-enter
-        // the runtime from inside `compute` if it ever needs to.
-        let value = source.with_mut(compute);
+        // Read-only access — does NOT bump the source's version counter.
+        let value = source.with(compute);
 
         RUNTIME.with(|rt| {
             let mut rt = rt.borrow_mut();
@@ -872,10 +1031,6 @@ impl KeyHandle {
         );
     }
 
-    /// Kept as `()`-returning for now since arbitrary char-forwarding
-    /// handlers (e.g. text inputs) rarely want to stop propagation —
-    /// but flip this to `-> Propagation` too if you want consistency.
-    /// Shown here matching `on`/`on_modified` for consistency:
     pub fn on_any(&self, handler: impl FnMut(KeyEvent) -> Propagation + 'static) {
         self.on_when(|_| true, handler);
     }

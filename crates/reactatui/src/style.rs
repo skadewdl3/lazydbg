@@ -8,7 +8,7 @@
 //! accepts `impl Into<T>` rather than a concrete `T`.
 
 /// Produced by the `style!` macro. See the module docs.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CombinedStyle {
     pub base: ratatui::style::Style,
     pub reactatui: crate::layout::Style,
