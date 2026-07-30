@@ -6,7 +6,7 @@ pub mod measure;
 pub mod node;
 pub mod style;
 
-pub use reactatui_macros::{children, component, style, tui};
+pub use reactatui_macros::{children, component, tui};
 
 pub use ext::FrameExt;
 pub use layout::{FlexItemNode, FlexNode, GridItemNode, GridNode, Padding};

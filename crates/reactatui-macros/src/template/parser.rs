@@ -1,6 +1,6 @@
 use proc_macro2::{Delimiter, Ident, Punct, Spacing, TokenStream as TokenStream2, TokenTree};
 
-use crate::ast::{Element, ElseBranch, ForNode, IfNode, Node, Prop, Tag};
+use crate::template::ast::{Element, ElseBranch, ForNode, IfNode, Node, Prop, Tag};
 
 pub struct Parser {
     tokens: Vec<TokenTree>,

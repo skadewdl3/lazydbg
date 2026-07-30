@@ -4,7 +4,6 @@ use reactatui::{
     hooks::{Propagation, use_emit, use_global_with, use_key, use_memo, use_state},
     keybindings, tui,
 };
-use reactatui_macros::style;
 use reactatui_widgets::{Block, List};
 
 use crate::interface::backend::DbgFrame;
@@ -29,12 +28,6 @@ pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
 
     tui! {
         <Paragraph::new(text)
-            style={style! {
-                    if active {
-                        background: green;
-                        bold;
-                    }
-                }}
             on:click={thing}
         />
     }
@@ -73,7 +66,6 @@ pub fn Frame<'a>() -> TuiNode<'a> {
                             &frame,
                             selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
                         )
-                        style={style!{ size: 1; }}
                     />
                 }
             </List>

@@ -68,14 +68,14 @@ pub fn Home<'a>() -> TuiNode<'a> {
         <Flex direction={Direction::Vertical}>
             <Flex direction={Direction::Horizontal}>
                 <Flex direction={Direction::Vertical}>
-                    <Status style={style!{ size: 3; }} />
-                    <Frame style={style!{ size: 1fr; }} />
-                    <Disassembly style={style!{ size: 1fr; }} />
+                    <Status />
+                    <Frame  />
+                    <Disassembly  />
                 </Flex>
                 <Logs is_active={false} />
             </Flex>
-            <Keybinds style={style!{ size: 1 }} />
-            <Dialog::new visible={open.get()} width={"50%"} style={style!{ ignore; }}>
+            <Keybinds />
+            <Dialog::new visible={open.get()} width={"50%"}>
                 <Input("Enter binary", open.get(), true) on:submit={submit_handler} />
             </Dialog>
         </Flex>

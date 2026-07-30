@@ -3,19 +3,14 @@
 //! Provides the `tui!` macro for declaring TUI node trees and the `#[component]`
 //! attribute macro for functional components.
 
-mod ast;
-mod generate;
-mod parser;
 mod style;
+mod template;
 
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemFn, parse_macro_input};
 
-use style::expand as expand_style;
-
-use crate::generate::{gen_fragment, gen_node};
-use crate::parser::Parser;
+use crate::template::{Parser, gen_fragment, gen_node};
 
 /// Declares a tree of TUI nodes using an HTML-like JSX syntax.
 ///
@@ -36,8 +31,7 @@ pub fn tui(input: TokenStream) -> TokenStream {
     }
 }
 
-/// A functional component that tracks hooks automatically.
-///
+/// A react-esque functional component that tracks state automatically.
 /// It injects a guard at the top of the function to push the component's unique
 /// context to the hook runtime stack.
 #[proc_macro_attribute]
@@ -57,8 +51,8 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     let fn_name = func.sig.ident.to_string();
 
     // Prepend `let _guard = ::reactatui::hooks::__enter_component("<name>");`
-    // to the existing function body. The ComponentGuard's Drop impl will pop
-    // the id stack automatically when the function returns.
+    // to the existing function body. The ComponentGuard handles popping the id
+    // off the runtime stack.
     let guard_stmt: syn::Stmt = syn::parse_quote! {
         let _guard = ::reactatui::hooks::__enter_component(#fn_name);
     };
@@ -78,11 +72,9 @@ pub fn children(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
 
-/// Build a `CombinedStyle` — one value carrying both a
-/// `ratatui::style::Style` (colors) and a `reactatui::layout::Style`
-/// (flex/grid alignment). See `reactatui::style::CombinedStyle` for how
-/// consumers pick which half they get.
-#[proc_macro]
-pub fn style(input: TokenStream) -> TokenStream {
-    expand_style(input.into()).into()
+/// An attribute marker on component arguments to mark them as props
+/// instead of constructor arguments
+#[proc_macro_attribute]
+pub fn prop(_metadata: TokenStream, input: TokenStream) -> TokenStream {
+    input
 }
