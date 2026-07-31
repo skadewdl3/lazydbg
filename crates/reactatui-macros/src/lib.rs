@@ -114,7 +114,7 @@ pub fn layout(input: TokenStream) -> TokenStream {
     layout::layout(input.into()).into()
 }
 
-/// Builds a `ratatui::style::Style` from CSS-like declarations.
+/// Builds a `reactatui::ReactatuiStyle` from CSS-like declarations.
 ///
 /// Colors accept ratatui's named ANSI palette, `rgb(r, g, b)`, `#RGB`,
 /// `#RRGGBB`, `indexed(n)`, or a braced Rust `Color` expression. Supported
@@ -122,8 +122,15 @@ pub fn layout(input: TokenStream) -> TokenStream {
 /// `font-weight`, `font-style`, `text-decoration-line`, `visibility`,
 /// `text-style`, `all`, and `patch`, along with the documented color aliases.
 ///
+/// Block configuration supports `borders`, `border-type`, `border-set`,
+/// `title-alignment`, `title-position`, `padding`, `merge-borders`, and
+/// `shadow`. Content-bearing methods such as `title` remain ordinary widget
+/// props.
+///
 /// The macro supports the same inline and block `if` chains and top-level
-/// `match` shorthand as `layout!`.
+/// `match` shorthand as `layout!`. The result converts into Ratatui `Style`
+/// and block-property types. Reuse a value by passing `&style` to each block
+/// callback that needs one of its configured properties.
 ///
 /// ```ignore
 /// style! {

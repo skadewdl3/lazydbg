@@ -1,56 +1,163 @@
-//! Compatibility type carrying both a
-//! `ratatui::style::Style` (colors/modifiers) and a `reactatui::layout::Style`
-//! (flex/grid alignment) side by side.
+//! The universal value produced by [`style!`](crate::style!).
 //!
-//! Consumers don't pick eagerly — whichever builder method a widget exposes
-//! (`Block::style` wants colors, `FlexItemNode::style` wants layout),
-//! `Into` resolves the matching half automatically as long as that method
-//! accepts `impl Into<T>` rather than a concrete `T`.
+//! [`ReactatuiStyle`] keeps ordinary Ratatui text styling together with typed
+//! block configuration. Each builder callback selects the value it needs
+//! through `Into<T>`.
 
-/// Legacy combined style value. The `style!` macro returns ratatui's `Style` directly.
+use std::ops::Deref;
+
+use ratatui::{
+    layout::Alignment,
+    style::{Color, Modifier, Style},
+    symbols::{border, merge::MergeStrategy},
+    widgets::{BorderType, Borders, Padding, Shadow, TitlePosition},
+};
+
+/// A CSS-like style value that can be interpreted by different Ratatui APIs.
+///
+/// Reuse one value by passing a reference to each callback. For example,
+/// `block.style(&style).borders(&style).border_type(&style)`.
 #[derive(Debug, Clone, Default)]
-pub struct CombinedStyle {
-    pub base: ratatui::style::Style,
-    pub reactatui: crate::layout::Style,
-    pub border_type: Option<ratatui::widgets::BorderType>,
+pub struct ReactatuiStyle<'a> {
+    base: Style,
+    block: Vec<BlockProperty<'a>>,
 }
 
-impl CombinedStyle {
-    /// Explicit accessor for contexts where `Into`'s target type can't be
-    /// inferred (e.g. storing into a `let` with no type annotation).
-    pub fn base(self) -> ratatui::style::Style {
+impl<'a> ReactatuiStyle<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Extract the ordinary Ratatui style.
+    pub fn base(self) -> Style {
         self.base
     }
 
-    /// Explicit accessor, layout half.
-    pub fn reactatui(self) -> crate::layout::Style {
-        self.reactatui
+    #[doc(hidden)]
+    pub fn base_style(mut self, style: impl Into<Style>) -> Self {
+        self.base = style.into();
+        self
     }
 
-    pub fn border_type(&self) -> ratatui::widgets::BorderType {
-        self.border_type
-            .unwrap_or(ratatui::widgets::BorderType::Plain)
+    #[doc(hidden)]
+    pub fn fg(mut self, color: Color) -> Self {
+        self.base = self.base.fg(color);
+        self
     }
 
-    pub fn split(self) -> (ratatui::style::Style, crate::layout::Style) {
-        (self.base, self.reactatui)
+    #[doc(hidden)]
+    pub fn bg(mut self, color: Color) -> Self {
+        self.base = self.base.bg(color);
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn underline_color(mut self, color: Color) -> Self {
+        self.base = self.base.underline_color(color);
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn add_modifier(mut self, modifier: Modifier) -> Self {
+        self.base = self.base.add_modifier(modifier);
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn remove_modifier(mut self, modifier: Modifier) -> Self {
+        self.base = self.base.remove_modifier(modifier);
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn patch(mut self, style: impl Into<Style>) -> Self {
+        self.base = self.base.patch(style);
+        self
     }
 }
 
-impl From<CombinedStyle> for ratatui::style::Style {
-    fn from(c: CombinedStyle) -> Self {
-        c.base
+impl Deref for ReactatuiStyle<'_> {
+    type Target = Style;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
     }
 }
 
-impl From<CombinedStyle> for crate::layout::Style {
-    fn from(c: CombinedStyle) -> Self {
-        c.reactatui
+impl From<ReactatuiStyle<'_>> for Style {
+    fn from(style: ReactatuiStyle<'_>) -> Self {
+        style.base
     }
 }
 
-impl From<CombinedStyle> for ratatui::widgets::BorderType {
-    fn from(c: CombinedStyle) -> Self {
-        c.border_type.unwrap_or(ratatui::widgets::BorderType::Plain)
+impl From<&ReactatuiStyle<'_>> for Style {
+    fn from(style: &ReactatuiStyle<'_>) -> Self {
+        style.base.clone()
     }
 }
+
+// This registry is the runtime half of adding a block property. It generates
+// the stored property, macro-facing setter, and owned/borrowed conversions for
+// the concrete type accepted by its Ratatui callback.
+macro_rules! block_properties {
+    (
+        conversions {
+            $(
+                $variant:ident($ty:ty) => $setter:ident;
+            )*
+        }
+    ) => {
+        #[derive(Debug, Clone)]
+        enum BlockProperty<'a> {
+            $(
+                $variant($ty),
+            )*
+        }
+
+        impl<'a> ReactatuiStyle<'a> {
+            $(
+                #[doc(hidden)]
+                pub fn $setter(mut self, value: impl Into<$ty>) -> Self {
+                    self.block.push(BlockProperty::$variant(value.into()));
+                    self
+                }
+            )*
+        }
+
+        $(
+            impl<'a> From<ReactatuiStyle<'a>> for $ty {
+                fn from(style: ReactatuiStyle<'a>) -> Self {
+                    (&style).into()
+                }
+            }
+
+            impl<'a> From<&ReactatuiStyle<'a>> for $ty {
+                fn from(style: &ReactatuiStyle<'a>) -> Self {
+                    style.block.iter().rev().find_map(|property| match property {
+                        BlockProperty::$variant(value) => Some(value.clone()),
+                        _ => None,
+                    }).unwrap_or_else(|| panic!(
+                        "style! value does not configure `{}`",
+                        stringify!($setter),
+                    ))
+                }
+            }
+        )*
+    };
+}
+
+block_properties! {
+    conversions {
+        Borders(Borders) => borders;
+        BorderType(BorderType) => border_type;
+        BorderSet(border::Set<'a>) => border_set;
+        TitleAlignment(Alignment) => title_alignment;
+        TitlePosition(TitlePosition) => title_position;
+        Padding(Padding) => padding;
+        MergeBorders(MergeStrategy) => merge_borders;
+        Shadow(Shadow) => shadow;
+    }
+}
+
+/// Backwards-compatible name for code that used the earlier combined value.
+pub type CombinedStyle<'a> = ReactatuiStyle<'a>;

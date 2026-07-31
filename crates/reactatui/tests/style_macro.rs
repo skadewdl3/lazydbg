@@ -7,7 +7,8 @@ fn returns_a_plain_ratatui_style() {
         color: red;
         background-color: #0f0;
         text-decoration-color: rgb(1, 2, 3);
-    };
+    }
+    .into();
 
     assert_eq!(
         actual,
@@ -199,7 +200,7 @@ fn all_and_patch_follow_declaration_order() {
         patch: {base};
     };
     assert_eq!(
-        initial,
+        ratatui::prelude::Style::from(initial),
         Style::new()
             .fg(Color::Yellow)
             .bg(Color::Blue)
@@ -211,5 +212,8 @@ fn all_and_patch_follow_declaration_order() {
         all: reset;
         color: yellow;
     };
-    assert_eq!(reset, Style::reset().fg(Color::Yellow));
+    assert_eq!(
+        ratatui::prelude::Style::from(reset),
+        Style::reset().fg(Color::Yellow)
+    );
 }

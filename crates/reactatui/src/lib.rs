@@ -16,6 +16,7 @@ pub type Grid<'a> = GridNode<'a>;
 pub use hooks::{EventOutcome, RedrawHandle, Runtime};
 pub use node::{StateHandle, TuiNode};
 pub use style::CombinedStyle;
+pub use style::ReactatuiStyle;
 pub use view::{AnyView, View, WidgetView, view};
 
 /// Child nodes supplied to a component's `#[slot]` parameters.
@@ -72,12 +73,12 @@ pub mod prelude {
     // layout::Style/Align/Justify/FlexBasis stay out of the prelude glob —
     // this module already re-exports ratatui::style::Style below, and
     // colliding those two under one glob import would be a footgun.
-    // CombinedStyle and the `style!` macro are safe to include: neither
+    // ReactatuiStyle and the `style!` macro are safe to include: neither
     // name collides with anything else here.
     pub use crate::{
         AnyView, CombinedStyle, EventOutcome, Flex, FlexItemNode, FlexNode, FrameExt, Grid,
-        GridItemNode, GridNode, Padding, RedrawHandle, Runtime, StateHandle, TuiNode, WidgetView,
-        children, component, layout, style, tui, view,
+        GridItemNode, GridNode, Padding, ReactatuiStyle, RedrawHandle, Runtime, StateHandle,
+        TuiNode, WidgetView, children, component, layout, style, tui, view,
     };
     pub use ratatui::{
         layout::{Alignment, Constraint, Direction, Layout, Rect},

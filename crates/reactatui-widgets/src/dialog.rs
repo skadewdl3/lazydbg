@@ -2,12 +2,12 @@ use ratatui::{
     buffer::Buffer,
     layout::{Flex, Layout, Rect},
     style::Style,
-    widgets::{BorderType, Borders, Clear, Padding, Widget},
+    widgets::{Clear, Widget},
 };
 use reactatui::{
     TuiNode, component,
     measure::{Measured, blit_measured, measure_node},
-    tui,
+    style, tui,
 };
 
 use crate::Block;
@@ -63,11 +63,16 @@ impl<'a> Default for DialogWidget<'a> {
 
 impl<'a> DialogWidget<'a> {
     pub fn new() -> Self {
+        let style = style! {
+            borders: all;
+            border-type: rounded;
+            padding: 1;
+        };
         Self {
             block: Block::new()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .padding(Padding::uniform(1)),
+                .borders(&style)
+                .border_type(&style)
+                .padding(&style),
             children: Vec::new(),
             width: None,  // auto-fit by default
             height: None, // auto-fit by default

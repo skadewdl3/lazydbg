@@ -123,7 +123,7 @@ impl<'a> InputBase<'a> {
         Self {
             placeholder,
             block: None,
-            style: style! {},
+            style: style! {}.into(),
             focused: true,
             show_cursor: true,
         }

@@ -1,4 +1,4 @@
-use ratatui::widgets::{Borders, Paragraph};
+use ratatui::widgets::Paragraph;
 use reactatui::{
     TuiNode, component,
     hooks::{resource, state, use_key},
@@ -56,9 +56,10 @@ pub fn Frame<'a>() -> TuiNode<'a> {
     if frame_count > 0 && selected_frame.get() >= frame_count {
         selected_frame.set(frame_count - 1);
     }
+    let block_style = style! { borders: all; };
 
     tui! {
-        <Block::default title="Stack Frame" borders={Borders::ALL}>
+        <Block::default title="Stack Frame" borders={&block_style}>
             <List virtual={false}>
                 for (index, frame) in frames.get().into_iter().enumerate() {
                     <FrameItem(frame.as_ref())

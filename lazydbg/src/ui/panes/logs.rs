@@ -30,9 +30,10 @@ pub fn Logs<'a>(#[prop] is_active: bool) -> TuiNode<'a> {
     let lines_str = app.logs.snapshot().join("'\n");
     let mouse_y = scroll_offset.clone();
     let mouse_x = scroll_offset.clone();
+    let block_style = style! { borders: all; };
 
     tui! {
-        <Block::default borders={Borders::ALL} title={"Logs"}>
+        <Block::default borders={&block_style} title={"Logs"}>
             <Paragraph::new(lines_str) scroll={(scroll_y_offset, scroll_x_offset)}
                 on:scrolly={move |delta: i16| mouse_y.with_mut(|o| apply_scroll_delta(&mut o.0, delta))}
                 on:scrollx={move |delta: i16| mouse_x.with_mut(|o| apply_scroll_delta(&mut o.1, delta))}

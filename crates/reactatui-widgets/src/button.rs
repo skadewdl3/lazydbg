@@ -15,8 +15,7 @@ use crate::Block;
 /// ```ignore
 /// <Button
 ///     label={"Save"}
-///     style={style!{ color: cyan; text-style: bold; }}
-///     borders={Borders::ALL}
+///     borders={style!{ borders: all; }}
 ///     disabled={false}
 ///     focused={true}
 ///     on:click={move || save()}
@@ -25,7 +24,7 @@ use crate::Block;
 #[component]
 pub fn Button<'a>(
     #[prop] label: &'a str,
-    #[prop] borders: Borders,
+    #[prop] borders: impl Into<Borders>,
     #[prop] disabled: bool,
     #[prop] focused: bool,
     #[prop] on_click: Action,
@@ -52,7 +51,7 @@ pub fn Button<'a>(
     let button = TuiNode::from_widget(
         Block::default()
             .borders(borders)
-            .style(appearance)
+            .style(&appearance)
             .children(vec![TuiNode::from_widget(
                 Paragraph::new(label).alignment(Alignment::Center),
             )]),
@@ -101,7 +100,7 @@ mod tests {
             move || {
                 Button(
                     "Save",
-                    Borders::ALL,
+                    style! { borders: all; },
                     false,
                     true,
                     Action::from(move || calls.set(calls.get() + 1)),
