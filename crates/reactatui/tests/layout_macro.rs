@@ -266,3 +266,36 @@ fn explicit_keys_identify_looped_components() {
         }
     });
 }
+
+#[test]
+fn unkeyed_looped_components_fall_back_to_occurrence_identity() {
+    let runtime = Runtime::new();
+    let area = Rect::new(0, 0, 4, 2);
+    let mut buffer = Buffer::empty(area);
+    runtime.render_to_buffer(&mut buffer, area, || {
+        tui! {
+            <Flex::vertical>
+                for _ in 0..2 {
+                    <KeyedItem />
+                }
+            </Flex>
+        }
+    });
+}
+
+#[test]
+#[should_panic(expected = "duplicate explicit key for component `KeyedItem`")]
+fn duplicate_explicit_keys_are_rejected() {
+    let runtime = Runtime::new();
+    let area = Rect::new(0, 0, 4, 2);
+    let mut buffer = Buffer::empty(area);
+    runtime.render_to_buffer(&mut buffer, area, || {
+        tui! {
+            <Flex::vertical>
+                for _ in 0..2 {
+                    <KeyedItem key={10} />
+                }
+            </Flex>
+        }
+    });
+}

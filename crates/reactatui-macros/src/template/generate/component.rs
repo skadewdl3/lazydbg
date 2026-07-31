@@ -32,7 +32,7 @@ pub fn gen_custom_component(element: &Element) -> TokenStream2 {
                 )
             }},
             None => quote! {
-                ::reactatui::hooks::__with_component_key(
+                ::reactatui::hooks::__with_component_callsite(
                     &(file!(), line!(), column!()),
                     || #call,
                 )

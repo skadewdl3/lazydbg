@@ -65,6 +65,7 @@ pub fn Frame<'a>() -> TuiNode<'a> {
             <List virtual={false}>
                 for (index, frame) in frames.get().into_iter().enumerate() {
                     <FrameItem(frame.as_ref())
+                        key={index}
                         active={selected_frame.get() == index}
                     />
                 }

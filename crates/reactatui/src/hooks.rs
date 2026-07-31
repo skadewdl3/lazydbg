@@ -326,6 +326,12 @@ struct MouseRegion {
     scrolly_handler: Option<Box<dyn FnMut(i16) -> Propagation>>,
 }
 
+#[derive(Clone, Copy)]
+struct PendingComponentKey {
+    hash: u64,
+    explicit: bool,
+}
+
 #[derive(Default)]
 struct HookRuntime {
     id_stack: Vec<u64>,
@@ -352,7 +358,8 @@ struct HookRuntime {
     mouse_region_idx: HashMap<u64, u32>,
     mouse_region_stack: Vec<usize>,
     focused_component: Option<u64>,
-    pending_component_keys: Vec<u64>,
+    pending_component_keys: Vec<PendingComponentKey>,
+    component_callsite_counts: HashMap<(u64, u64), u32>,
 }
 
 pub struct MouseRegionGuard;
@@ -383,6 +390,7 @@ fn begin_frame() {
         // Reset per-component mouse region counters for the new frame.
         rt.mouse_region_idx.clear();
         rt.mouse_region_stack.clear();
+        rt.component_callsite_counts.clear();
         rt.seen_state_keys.clear();
         rt.seen_components.clear();
         rt.pending_effects.clear();
@@ -1066,16 +1074,47 @@ pub fn __enter_component(name: &'static str) -> ComponentGuard {
             None => 0,
         };
 
-        let id = match rt.pending_component_keys.last().copied() {
-            Some(key) => component_id(parent, name, key as u32) ^ key.rotate_left(23),
+        let pending_key = rt.pending_component_keys.last().copied();
+        let mut id = match pending_key {
+            Some(PendingComponentKey {
+                hash: key,
+                explicit: true,
+            }) => component_id(parent, name, key as u32) ^ key.rotate_left(23),
+            Some(PendingComponentKey {
+                hash: callsite,
+                explicit: false,
+            }) => component_id(parent, name, callsite as u32) ^ callsite.rotate_left(23),
             None => component_id(parent, name, sibling_index),
         };
 
+        let mut inserted = rt.seen_components.insert(id);
+        if !inserted
+            && let Some(PendingComponentKey {
+                hash: callsite,
+                explicit: false,
+            }) = pending_key
+        {
+            loop {
+                let occurrence = rt
+                    .component_callsite_counts
+                    .entry((parent, callsite))
+                    .or_insert(1);
+                id = component_id(parent, name, *occurrence) ^ callsite.rotate_left(23);
+                *occurrence += 1;
+                inserted = rt.seen_components.insert(id);
+                if inserted {
+                    break;
+                }
+            }
+        }
+
+        if !inserted {
+            if pending_key.is_some_and(|key| key.explicit) {
+                panic!("duplicate explicit key for component `{name}` under the same parent");
+            }
+            panic!("component identity collision for `{name}`");
+        }
         rt.id_stack.push(id);
-        assert!(
-            rt.seen_components.insert(id),
-            "duplicate component key for `{name}` under the same parent"
-        );
         rt.sibling_counters.push(0);
 
         // Always update the parent: keyed components may move between frames.
@@ -1086,6 +1125,15 @@ pub fn __enter_component(name: &'static str) -> ComponentGuard {
 
 #[doc(hidden)]
 pub fn __with_component_key<K: Hash, R>(key: &K, f: impl FnOnce() -> R) -> R {
+    with_component_key(key, true, f)
+}
+
+#[doc(hidden)]
+pub fn __with_component_callsite<K: Hash, R>(key: &K, f: impl FnOnce() -> R) -> R {
+    with_component_key(key, false, f)
+}
+
+fn with_component_key<K: Hash, R>(key: &K, explicit: bool, f: impl FnOnce() -> R) -> R {
     struct KeyGuard {
         active: bool,
     }
@@ -1107,7 +1155,14 @@ pub fn __with_component_key<K: Hash, R>(key: &K, f: impl FnOnce() -> R) -> R {
 
     let mut hasher = DefaultHasher::new();
     key.hash(&mut hasher);
-    RUNTIME.with(|rt| rt.borrow_mut().pending_component_keys.push(hasher.finish()));
+    RUNTIME.with(|rt| {
+        rt.borrow_mut()
+            .pending_component_keys
+            .push(PendingComponentKey {
+                hash: hasher.finish(),
+                explicit,
+            });
+    });
     let _guard = KeyGuard { active: true };
     f()
 }

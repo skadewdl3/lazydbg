@@ -99,8 +99,9 @@ There is no string-based emitter/listener bus in the runtime.
 
 ## Identity And Layout
 
-Function component calls receive a stable source-call-site identity. Components
-created repeatedly at one call site must provide a key:
+Function component calls receive a stable source-call-site identity. Repeated
+unkeyed calls fall back to their occurrence index, which keeps simple loops
+convenient. Provide a key when rows can reorder or own persistent state:
 
 ```rust,ignore
 tui! {
