@@ -46,15 +46,15 @@ impl<'a> FlexNode<'a> {
         if let Some(dir) = style.direction {
             self.direction = dir;
         }
-        if let Some(gx) = style.gap_x {
-            if self.direction == Direction::Horizontal {
-                self.gap = gx;
-            }
+        if let Some(gx) = style.gap_x
+            && self.direction == Direction::Horizontal
+        {
+            self.gap = gx;
         }
-        if let Some(gy) = style.gap_y {
-            if self.direction == Direction::Vertical {
-                self.gap = gy;
-            }
+        if let Some(gy) = style.gap_y
+            && self.direction == Direction::Vertical
+        {
+            self.gap = gy;
         }
         if style.gap > 0 && style.gap_x.is_none() && style.gap_y.is_none() {
             self.gap = style.gap;
@@ -66,30 +66,28 @@ impl<'a> FlexNode<'a> {
         self
     }
 
-    /// Returns the statically-known minimum size: only `Length`/`Percent`
-    /// items contribute; `Auto` and `Fr` items contribute 0 (their sizes
-    /// are not known without rendering). Use this for a cheap lower-bound
-    /// estimate (e.g. in `Scroll`'s fast path).
-    ///
-    /// Returns `(width, height)`.
-    pub fn natural_size(&self, cross_axis_hint: u16) -> (u16, u16) {
-        let (_ignored, participating): (Vec<_>, Vec<_>) =
-            self.items.iter().partition(|item| item.style.ignore);
-
-        let gap_total = self
-            .gap
-            .saturating_mul((participating.len() as u16).saturating_sub(1));
+    /// Returns exact geometry for layouts that do not require intrinsic
+    /// measurement. An explicit `Auto` item returns `None`.
+    pub fn natural_size(&self, viewport: (u16, u16)) -> Option<(u16, u16)> {
+        let participating = self.items.iter().filter(|item| !item.style.ignore);
+        let count = participating.clone().count();
+        let gap_total = self.gap.saturating_mul((count as u16).saturating_sub(1));
         let mut main: u32 = u32::from(gap_total);
+        let main_available = match self.direction {
+            Direction::Horizontal => viewport.0,
+            Direction::Vertical => viewport.1,
+        };
 
-        for item in &participating {
-            main += match item.style.size {
+        for item in participating {
+            let item_size = match self.direction {
+                Direction::Horizontal => item.style.width.unwrap_or(item.style.size),
+                Direction::Vertical => item.style.height.unwrap_or(item.style.size),
+            };
+            main += match item_size {
                 Size::Length(n) => u32::from(n),
-                Size::Percent(p) => (u32::from(cross_axis_hint) * u32::from(p)) / 100,
-                Size::Fr(_) => 1,
-                Size::Auto => match self.direction {
-                    Direction::Horizontal => u32::from(item.style.min_width.unwrap_or(1)),
-                    Direction::Vertical => u32::from(item.style.min_height.unwrap_or(1)),
-                },
+                Size::Percent(p) => (u32::from(main_available) * u32::from(p)) / 100,
+                Size::Fr(_) => 0,
+                Size::Auto => return None,
             };
         }
 
@@ -100,10 +98,10 @@ impl<'a> FlexNode<'a> {
         };
         let main = (main.saturating_add(u32::from(main_pad))).min(u32::from(u16::MAX)) as u16;
 
-        match self.direction {
-            Direction::Horizontal => (main, cross_axis_hint),
-            Direction::Vertical => (cross_axis_hint, main),
-        }
+        Some(match self.direction {
+            Direction::Horizontal => (main, viewport.1),
+            Direction::Vertical => (viewport.0, main),
+        })
     }
 }
 
@@ -207,9 +205,26 @@ impl<'a> Widget for FlexNode<'a> {
         let count = participating.len();
 
         if count != 0 && area.width != 0 && area.height != 0 {
-            let styles: Vec<Style> = participating.iter().map(|it| it.style.clone()).collect();
-            let mut nodes: Vec<Option<TuiNode<'a>>> =
-                participating.into_iter().map(|it| Some(it.node)).collect();
+            struct Prepared<'a> {
+                style: Style,
+                node: Option<TuiNode<'a>>,
+                measured: Option<Measured<'a>>,
+                basis: u16,
+                grow: u16,
+                is_auto: bool,
+            }
+
+            let mut prepared: Vec<_> = participating
+                .into_iter()
+                .map(|item| Prepared {
+                    style: item.style,
+                    node: Some(item.node),
+                    measured: None,
+                    basis: 0,
+                    grow: 0,
+                    is_auto: false,
+                })
+                .collect();
 
             let total_gap = gap.saturating_mul((count as u16).saturating_sub(1));
             let available = match direction {
@@ -228,11 +243,6 @@ impl<'a> Widget for FlexNode<'a> {
             //   "Auto grows by default".
             // - `Auto` (or any item with non-Stretch cross-axis alignment)
             //   needs measuring before we know its basis.
-            let mut premeasured: Vec<Option<Measured<'a>>> = (0..count).map(|_| None).collect();
-            let mut basis = vec![0u16; count];
-            let mut grow = vec![0f32; count];
-            let mut is_auto = vec![false; count];
-
             // Estimate a "fair share" of the remaining budget for Auto
             // items *before* measuring any of them. Widgets with no real
             // intrinsic size (e.g. bordered Blocks) always fill whatever
@@ -243,24 +253,24 @@ impl<'a> Widget for FlexNode<'a> {
             // close to the space the item can actually use.
             let mut known_basis_sum: u32 = 0;
             let mut auto_count: u16 = 0;
-            for i in 0..count {
+            for item in &mut prepared {
                 let item_size = match direction {
-                    Direction::Horizontal => styles[i].width.unwrap_or(styles[i].size),
-                    Direction::Vertical => styles[i].height.unwrap_or(styles[i].size),
+                    Direction::Horizontal => item.style.width.unwrap_or(item.style.size),
+                    Direction::Vertical => item.style.height.unwrap_or(item.style.size),
                 };
                 match item_size {
                     Size::Length(n) => {
-                        basis[i] = n;
+                        item.basis = n;
                         known_basis_sum += u32::from(n);
                     }
                     Size::Percent(p) => {
                         let n = ((u32::from(available) * u32::from(p)) / 100) as u16;
-                        basis[i] = n;
+                        item.basis = n;
                         known_basis_sum += u32::from(n);
                     }
-                    Size::Fr(f) => grow[i] = f as f32,
+                    Size::Fr(f) => item.grow = f,
                     Size::Auto => {
-                        is_auto[i] = true;
+                        item.is_auto = true;
                         auto_count += 1;
                     }
                 }
@@ -273,28 +283,28 @@ impl<'a> Widget for FlexNode<'a> {
             // directly determines their basis. Probe rects always start at
             // (0, 0) so the measured scratch buffer origin is consistent
             // with `blit_measured`'s expectations.
-            for i in 0..count {
-                if !is_auto[i] {
+            for item in &mut prepared {
+                if !item.is_auto {
                     continue;
                 }
-                let node = nodes[i].take().expect("node already taken");
+                let node = item.node.take().expect("node already taken");
                 let probe = match direction {
                     Direction::Horizontal => Rect::new(0, 0, fair_share.max(1), cross_available),
                     Direction::Vertical => Rect::new(0, 0, cross_available, fair_share.max(1)),
                 };
                 let measured = measure_node(node, probe);
-                basis[i] = match direction {
+                item.basis = match direction {
                     Direction::Horizontal => measured.content_width,
                     Direction::Vertical => measured.content_height,
                 };
-                premeasured[i] = Some(measured);
+                item.measured = Some(measured);
             }
 
-            let total_basis: u32 = basis.iter().map(|&b| u32::from(b)).sum();
+            let total_basis: u32 = prepared.iter().map(|item| u32::from(item.basis)).sum();
             let free_space =
                 i64::from(available) - i64::from(total_basis.min(u32::from(u16::MAX)) as u16);
 
-            let mut sizes = basis.clone();
+            let mut sizes: Vec<u16> = prepared.iter().map(|item| item.basis).collect();
 
             if free_space > 0 {
                 // Grow phase: distribute leftover space proportionally by
@@ -302,12 +312,12 @@ impl<'a> Widget for FlexNode<'a> {
                 // stay at basis and leftover is handled by
                 // justify_content below.
                 let free_space = free_space as u16;
-                let total_grow: f32 = grow.iter().sum();
-                if total_grow > 0.0 {
+                let total_grow: u32 = prepared.iter().map(|item| u32::from(item.grow)).sum();
+                if let Some(total_grow) = std::num::NonZeroU32::new(total_grow) {
                     let mut used_extra = 0u16;
-                    for i in 0..count {
-                        let share = grow[i] / total_grow;
-                        let extra = (f32::from(free_space) * share).floor() as u16;
+                    for (i, item) in prepared.iter().enumerate() {
+                        let extra = ((u32::from(free_space) * u32::from(item.grow))
+                            / total_grow.get()) as u16;
                         let extra = extra.min(free_space.saturating_sub(used_extra));
                         sizes[i] = sizes[i].saturating_add(extra);
                         used_extra = used_extra.saturating_add(extra);
@@ -317,7 +327,7 @@ impl<'a> Widget for FlexNode<'a> {
                         if leftover == 0 {
                             break;
                         }
-                        if grow[i] > 0.0 {
+                        if prepared[i].grow > 0 {
                             sizes[i] = sizes[i].saturating_add(1);
                             leftover -= 1;
                         }
@@ -329,23 +339,23 @@ impl<'a> Widget for FlexNode<'a> {
             // is not `Stretch` needs its content measured to know how to
             // position it within its slot — but only *now*, once `sizes`
             // holds each item's real, final main-axis size. Auto items were already measured above and
-            // are skipped here via the `premeasured[i].is_some()` check.
+            // are skipped here when the prepared item already has a measurement.
             // Probe rects always start at (0, 0).
             for i in 0..count {
-                if premeasured[i].is_some() {
+                if prepared[i].measured.is_some() {
                     continue;
                 }
-                let align = Style::resolve_align(&container_style, &styles[i]);
+                let align = Style::resolve_align(&container_style, &prepared[i].style);
                 if align == Align::Stretch {
                     continue;
                 }
-                let node = nodes[i].take().expect("node already taken");
+                let node = prepared[i].node.take().expect("node already taken");
                 let main_probe = sizes[i].max(1);
                 let probe = match direction {
                     Direction::Horizontal => Rect::new(0, 0, main_probe, cross_available),
                     Direction::Vertical => Rect::new(0, 0, cross_available, main_probe),
                 };
-                premeasured[i] = Some(measure_node(node, probe));
+                prepared[i].measured = Some(measure_node(node, probe));
             }
 
             let used = sizes
@@ -377,9 +387,9 @@ impl<'a> Widget for FlexNode<'a> {
 
                 let item_area = item_area.intersection(area);
 
-                let align = Style::resolve_align(&container_style, &styles[i]);
+                let align = Style::resolve_align(&container_style, &prepared[i].style);
 
-                if let Some(measured) = premeasured[i].take() {
+                if let Some(measured) = prepared[i].measured.take() {
                     let target = align_cross(
                         item_area,
                         align,
@@ -390,7 +400,7 @@ impl<'a> Widget for FlexNode<'a> {
                     .intersection(area);
                     blit_measured(&measured, target, buf);
                 } else {
-                    let node = nodes[i].take().expect("node already taken");
+                    let node = prepared[i].node.take().expect("node already taken");
                     node.render(item_area, buf);
                 }
 

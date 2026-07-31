@@ -94,6 +94,15 @@ fn parse_keycode(key: &str, spec: &str) -> KeyCode {
 }
 
 impl ParsedKeySpec {
+    #[doc(hidden)]
+    pub const fn __new(modifier_bits: u8, code: KeyCode, shifted: bool) -> Self {
+        Self {
+            modifiers: KeyModifiers::from_bits_retain(modifier_bits),
+            code,
+            shifted,
+        }
+    }
+
     pub fn matches(&self, event: &KeyEvent) -> bool {
         if self.shifted {
             match self.code {
@@ -177,21 +186,19 @@ macro_rules! keybindings {
     ) => {
         {
             let mut __h = $handler;
-            let __chords: Vec<Vec<$crate::keys::ParsedKeySpec>> = vec![
-                $($crate::keys::parse_chord_spec($pat).steps),+
-            ];
+            let __chords: &'static [&'static [$crate::keys::ParsedKeySpec]] = const { &[
+                $($crate::__key_pattern!($pat)),+
+            ] };
 
             let all_single = __chords.iter().all(|c| c.len() == 1);
 
             if all_single {
+                let __single_key_specs = __chords;
                 $keys.on_when(
                     move |event: &::ratatui::crossterm::event::KeyEvent| {
-                        $(
-                            if $crate::keys::parse_chord_spec($pat).steps[0].matches(event) {
-                                return true;
-                            }
-                        )+
-                        false
+                        __single_key_specs
+                            .iter()
+                            .any(|sequence| sequence[0].matches(event))
                     },
                     move |_event: ::ratatui::crossterm::event::KeyEvent| -> ::reactatui::hooks::Propagation {
                         __h();

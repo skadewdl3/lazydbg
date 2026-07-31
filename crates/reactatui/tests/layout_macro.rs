@@ -6,6 +6,7 @@ use ratatui::{
 };
 use reactatui::layout::Size;
 use reactatui::layout::style::Justify;
+use reactatui::prelude::{Action, Callback, Runtime};
 use reactatui::{Flex, Grid, layout, tui};
 use reactatui::{TuiNode, component};
 
@@ -31,6 +32,18 @@ fn PropsWithConstructor<'a>(
     #[prop] first: &'a str,
 ) -> TuiNode<'a> {
     tui! { <Paragraph::new(format!("{prefix}{first}{second}")) /> }
+}
+
+#[component]
+fn TypedEvents(#[prop] on_activate: Action, #[prop] on_value: Callback<u32>) -> TuiNode<'static> {
+    on_activate.call();
+    on_value.call(42);
+    TuiNode::empty()
+}
+
+#[component]
+fn KeyedItem() -> TuiNode<'static> {
+    TuiNode::empty()
 }
 
 #[test]
@@ -216,4 +229,40 @@ fn optional_slots_may_be_omitted() {
 #[should_panic(expected = "required slot `heading` was not provided")]
 fn required_slots_must_be_supplied() {
     let _ = tui! { <RequiredSlot /> };
+}
+
+#[test]
+fn custom_events_are_typed_props_with_familiar_syntax() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let activations = Rc::new(Cell::new(0));
+    let value = Rc::new(Cell::new(0));
+    let action_count = activations.clone();
+    let output = value.clone();
+    let _ = tui! {
+        <TypedEvents
+            on:activate={move || action_count.set(action_count.get() + 1)}
+            on:value={move |next| output.set(next)}
+        />
+    };
+
+    assert_eq!(activations.get(), 1);
+    assert_eq!(value.get(), 42);
+}
+
+#[test]
+fn explicit_keys_identify_looped_components() {
+    let runtime = Runtime::new();
+    let area = Rect::new(0, 0, 4, 2);
+    let mut buffer = Buffer::empty(area);
+    runtime.render_to_buffer(&mut buffer, area, || {
+        tui! {
+            <Flex::vertical>
+                for id in [10, 20] {
+                    <KeyedItem key={id} />
+                }
+            </Flex>
+        }
+    });
 }

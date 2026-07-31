@@ -55,9 +55,9 @@ impl<'a> GridNode<'a> {
         self
     }
 
-    pub fn natural_size(&self, viewport: (u16, u16)) -> (u16, u16) {
-        let col_total = Self::track_total(&self.columns, viewport.0);
-        let row_total = Self::track_total(&self.rows, viewport.1);
+    pub fn natural_size(&self, viewport: (u16, u16)) -> Option<(u16, u16)> {
+        let col_total = Self::track_total(&self.columns, viewport.0)?;
+        let row_total = Self::track_total(&self.rows, viewport.1)?;
 
         let gap_x_total = self
             .gap_x
@@ -77,19 +77,20 @@ impl<'a> GridNode<'a> {
             .saturating_add(pad_top)
             .saturating_add(pad_bottom);
 
-        (width, height)
+        Some((width, height))
     }
 
-    fn track_total(tracks: &[Size], reference: u16) -> u16 {
+    fn track_total(tracks: &[Size], reference: u16) -> Option<u16> {
         let mut total: u32 = 0;
         for track in tracks {
             total += match track {
                 Size::Length(n) => u32::from(*n),
                 Size::Percent(p) => (u32::from(reference) * u32::from(*p)) / 100,
-                Size::Fr(_) | Size::Auto => 0,
+                Size::Fr(_) => 0,
+                Size::Auto => return None,
             };
         }
-        total.min(u32::from(u16::MAX)) as u16
+        Some(total.min(u32::from(u16::MAX)) as u16)
     }
 }
 
@@ -284,9 +285,10 @@ impl<'a> Widget for GridNode<'a> {
             return;
         }
 
-        let styles: Vec<Style> = items.iter().map(|it| it.style.clone()).collect();
-        let mut nodes: Vec<Option<TuiNode<'a>>> =
-            items.into_iter().map(|it| Some(it.node)).collect();
+        let (styles, mut nodes): (Vec<Style>, Vec<Option<TuiNode<'a>>>) = items
+            .into_iter()
+            .map(|item| (item.style, Some(item.node)))
+            .unzip();
 
         let placements = auto_place(columns.len(), &styles);
 
@@ -414,8 +416,18 @@ impl<'a> Widget for GridNode<'a> {
         let col_sizes = resolve_sizes(&columns, available_w, &auto_col_size);
         let row_sizes = resolve_sizes(&rows, available_h, &auto_row_size);
 
-        let col_used = col_sizes.iter().map(|&s| u16::from(s)).sum::<u16>() as u16 + total_gap_x;
-        let row_used = row_sizes.iter().map(|&s| u16::from(s)).sum::<u16>() as u16 + total_gap_y;
+        let col_used = col_sizes
+            .iter()
+            .map(|&size| u32::from(size))
+            .sum::<u32>()
+            .saturating_add(u32::from(total_gap_x))
+            .min(u32::from(u16::MAX)) as u16;
+        let row_used = row_sizes
+            .iter()
+            .map(|&size| u32::from(size))
+            .sum::<u32>()
+            .saturating_add(u32::from(total_gap_y))
+            .min(u32::from(u16::MAX)) as u16;
 
         // Real per-axis track distribution: `justify_content` spreads
         // leftover space among *columns*, `align_content` among *rows* —
@@ -460,7 +472,7 @@ impl<'a> Widget for GridNode<'a> {
             premeasured[i] = Some(measure_node(node, probe));
         }
 
-        for (i, ((col, row), style)) in placements.into_iter().zip(styles.into_iter()).enumerate() {
+        for (i, ((col, row), style)) in placements.into_iter().zip(styles).enumerate() {
             let col_span = style.resolved_column_span().max(1);
             let row_span = style.resolved_row_span().max(1);
 

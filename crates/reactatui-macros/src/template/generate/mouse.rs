@@ -81,8 +81,10 @@ pub fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2
 
     quote! {{
         let __inner_node = #node;
+        let __reactatui_mouse_owner = ::reactatui::hooks::__current_component_id();
         ::reactatui::TuiNode::Widget(Box::new(move |__area: ::ratatui::layout::Rect, __buf: &mut ::ratatui::buffer::Buffer| {
-            ::reactatui::hooks::register_mouse_region(
+            let __reactatui_mouse_guard = ::reactatui::hooks::register_mouse_region(
+                __reactatui_mouse_owner,
                 __area,
                 #click_tokens,
                 #mousein_tokens,
@@ -91,6 +93,7 @@ pub fn maybe_wrap_with_mouse(node: TokenStream2, props: &[Prop]) -> TokenStream2
                 #scrolly_tokens,
             );
             ::ratatui::widgets::Widget::render(__inner_node, __area, __buf);
+            ::core::mem::drop(__reactatui_mouse_guard);
         }))
     }}
 }

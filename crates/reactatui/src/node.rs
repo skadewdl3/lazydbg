@@ -8,8 +8,10 @@ use crate::layout::{FlexNode, GridNode};
 use crate::{hooks, layout::Style};
 
 /// Universal render node produced by the `tui!` macro.
+type RenderFn<'a> = dyn FnOnce(Rect, &mut Buffer) + 'a;
+
 pub enum TuiNode<'a> {
-    Widget(Box<dyn FnOnce(Rect, &mut Buffer) + 'a>),
+    Widget(Box<RenderFn<'a>>),
     Fragment(Vec<TuiNode<'a>>),
     Flex(FlexNode<'a>),
     Grid(GridNode<'a>),
@@ -31,7 +33,7 @@ impl<'a, S> StateHandle<'a, S> for &'a mut S {
 
 impl<'a, S: 'static> StateHandle<'a, S> for hooks::State<S> {
     fn with_state<R>(self, f: impl FnOnce(&mut S) -> R) -> R {
-        self.with_mut(f)
+        self.with_mut_untracked(f)
     }
 }
 
@@ -155,6 +157,12 @@ impl<'a> Widget for TuiNode<'a> {
     }
 }
 
+impl crate::view::View for TuiNode<'_> {
+    fn render(self, area: Rect, buffer: &mut Buffer) {
+        Widget::render(self, area, buffer);
+    }
+}
+
 impl<'a> From<Option<TuiNode<'a>>> for TuiNode<'a> {
     fn from(node: Option<TuiNode<'a>>) -> Self {
         node.unwrap_or(TuiNode::Empty)
@@ -188,5 +196,14 @@ mod tests {
         let (merged, _core) = outer.take_style();
         assert_eq!(merged.size, Size::Length(1));
         assert_eq!(merged.align_self, Some(Align::Center));
+    }
+
+    #[test]
+    fn explicit_default_size_overrides_an_inner_auto_size() {
+        let inner = TuiNode::Empty.style(Style::default().size(Size::Auto));
+        let outer = inner.style(Style::default().size(Size::Fr(1)));
+
+        let (merged, _) = outer.take_style();
+        assert_eq!(merged.size, Size::Fr(1));
     }
 }

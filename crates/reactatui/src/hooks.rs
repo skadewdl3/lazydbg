@@ -1,19 +1,285 @@
-use std::any::Any;
-use std::cell::RefCell;
+use std::any::{Any, TypeId};
+use std::cell::{Cell, RefCell};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::rc::Rc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{
-    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::layout::Rect;
 
 use crate::keys::ParsedKeySpec;
 
-type AnyCell = Rc<RefCell<Box<dyn Any>>>;
+/// Owns all component state and event registrations for one UI tree.
+///
+/// A runtime is installed only while it builds/renders a tree or dispatches an
+/// event. Components can therefore keep using the familiar free-standing hook
+/// functions without sharing process-global state.
+#[derive(Clone)]
+pub struct Runtime {
+    inner: Rc<RuntimeInner>,
+}
+
+struct RuntimeInner {
+    hooks: RefCell<HookRuntime>,
+    redraw: RedrawHandle,
+}
+
+/// A thread-safe redraw flag that can be handed to background workers.
+#[derive(Clone)]
+pub struct RedrawHandle(Arc<AtomicBool>);
+
+impl RedrawHandle {
+    pub fn request(&self) {
+        self.0.store(true, Ordering::Release);
+    }
+
+    pub fn is_requested(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EventOutcome {
+    pub handled: bool,
+    pub redraw_requested: bool,
+}
+
+thread_local! {
+    static CURRENT_RUNTIME: RefCell<Vec<Rc<RuntimeInner>>> = const { RefCell::new(Vec::new()) };
+}
+
+struct RuntimeAccess;
+
+static RUNTIME: RuntimeAccess = RuntimeAccess;
+
+impl RuntimeAccess {
+    fn with<R>(&self, f: impl FnOnce(&RefCell<HookRuntime>) -> R) -> R {
+        CURRENT_RUNTIME.with(|stack| {
+            let inner = stack
+                .borrow()
+                .last()
+                .cloned()
+                .expect("reactatui hook used outside Runtime::render/handle_event");
+            f(&inner.hooks)
+        })
+    }
+
+    fn request_redraw(&self) {
+        CURRENT_RUNTIME.with(|stack| {
+            let inner = stack
+                .borrow()
+                .last()
+                .cloned()
+                .expect("reactatui state used outside its Runtime scope");
+            inner.redraw.request();
+        });
+    }
+}
+
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Runtime {
+    pub fn new() -> Self {
+        Self {
+            inner: Rc::new(RuntimeInner {
+                hooks: RefCell::new(HookRuntime::default()),
+                redraw: RedrawHandle(Arc::new(AtomicBool::new(true))),
+            }),
+        }
+    }
+
+    fn scoped<R>(&self, f: impl FnOnce() -> R) -> R {
+        struct Scope;
+        impl Drop for Scope {
+            fn drop(&mut self) {
+                CURRENT_RUNTIME.with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            }
+        }
+
+        CURRENT_RUNTIME.with(|stack| stack.borrow_mut().push(self.inner.clone()));
+        let _scope = Scope;
+        f()
+    }
+
+    pub fn render<V>(&self, frame: &mut ratatui::Frame<'_>, area: Rect, view: impl FnOnce() -> V)
+    where
+        V: crate::view::View,
+    {
+        self.scoped(|| {
+            self.inner.redraw.0.store(false, Ordering::Release);
+            begin_frame();
+            frame.render_widget(crate::view::ViewWidget(view()), area);
+            finish_frame();
+        });
+    }
+
+    /// Renders a frame directly into a buffer.
+    ///
+    /// This is the headless counterpart to [`Runtime::render`], useful for
+    /// tests, snapshots, benchmarks, and renderers that already own a buffer.
+    pub fn render_to_buffer<V>(
+        &self,
+        buffer: &mut ratatui::buffer::Buffer,
+        area: Rect,
+        view: impl FnOnce() -> V,
+    ) where
+        V: crate::view::View,
+    {
+        self.scoped(|| {
+            self.inner.redraw.0.store(false, Ordering::Release);
+            begin_frame();
+            crate::view::View::render(view(), area, buffer);
+            finish_frame();
+        });
+    }
+
+    pub fn handle_event(&self, event: ratatui::crossterm::event::Event) -> EventOutcome {
+        let handled = self.scoped(|| match event {
+            ratatui::crossterm::event::Event::Key(key) => dispatch_key(key),
+            ratatui::crossterm::event::Event::Mouse(mouse) => dispatch_mouse(mouse),
+            ratatui::crossterm::event::Event::Resize(_, _) => {
+                self.request_render();
+                true
+            }
+            _ => false,
+        });
+        EventOutcome {
+            handled,
+            redraw_requested: self.needs_render(),
+        }
+    }
+
+    pub fn needs_render(&self) -> bool {
+        self.inner.redraw.is_requested()
+    }
+
+    pub fn request_render(&self) {
+        self.inner.redraw.request();
+    }
+
+    pub fn redraw_handle(&self) -> RedrawHandle {
+        self.inner.redraw.clone()
+    }
+
+    pub fn create_state<T: 'static>(&self, value: T) -> State<T> {
+        State::new(value, self.redraw_handle())
+    }
+
+    pub fn insert_resource<T: 'static>(&self, value: T) -> Resource<T> {
+        let resource = Resource(Rc::new(value));
+        self.inner
+            .hooks
+            .borrow_mut()
+            .resources
+            .insert(TypeId::of::<T>(), Box::new(resource.clone()));
+        resource
+    }
+
+    pub fn resource<T: 'static>(&self) -> Option<Resource<T>> {
+        self.inner
+            .hooks
+            .borrow()
+            .resources
+            .get(&TypeId::of::<T>())
+            .and_then(|value| value.downcast_ref::<Resource<T>>())
+            .cloned()
+    }
+}
+
+pub struct Resource<T>(Rc<T>);
+
+impl<T> Clone for Resource<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Deref for Resource<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub fn resource<T: 'static>() -> Resource<T> {
+    try_resource()
+        .unwrap_or_else(|| panic!("resource `{}` is not installed", std::any::type_name::<T>()))
+}
+
+pub fn try_resource<T: 'static>() -> Option<Resource<T>> {
+    RUNTIME.with(|rt| {
+        rt.borrow()
+            .resources
+            .get(&TypeId::of::<T>())
+            .and_then(|value| value.downcast_ref::<Resource<T>>())
+            .cloned()
+    })
+}
+
+pub struct Callback<T>(Rc<RefCell<dyn FnMut(T)>>);
+
+impl<T> Clone for Callback<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T, F> From<F> for Callback<T>
+where
+    F: FnMut(T) + 'static,
+{
+    fn from(handler: F) -> Self {
+        Self(Rc::new(RefCell::new(handler)))
+    }
+}
+
+impl<T> Callback<T> {
+    pub fn call(&self, value: T) {
+        (self.0.borrow_mut())(value);
+    }
+}
+
+/// A typed callback with no payload.
+pub struct Action(Rc<RefCell<dyn FnMut()>>);
+
+impl Clone for Action {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<F> From<F> for Action
+where
+    F: FnMut() + 'static,
+{
+    fn from(handler: F) -> Self {
+        Self(Rc::new(RefCell::new(handler)))
+    }
+}
+
+impl Action {
+    pub fn call(&self) {
+        (self.0.borrow_mut())();
+    }
+}
+
+type HookSite = (&'static str, u32, u32);
 
 struct KeyBinding {
     component_id: u64,
@@ -26,7 +292,7 @@ const CHORD_TIMEOUT: Duration = Duration::from_millis(1000);
 struct ChordBinding {
     // Each inner Vec is one alternative full sequence, e.g. `"g-g" | "home"`
     // registers two alternatives, lengths 2 and 1.
-    alternatives: Vec<Vec<ParsedKeySpec>>,
+    alternatives: &'static [&'static [ParsedKeySpec]],
     handler: Option<Box<dyn FnMut() -> Propagation>>,
     component_id: u64,
 }
@@ -41,15 +307,6 @@ pub enum Propagation {
     Stop,
 }
 
-struct EventListener {
-    /// The component that called `listen`.
-    component_id: u64,
-    /// Position of `component_id` inside the emitter's ancestry path
-    /// (filled in at dispatch time for ordering).
-    event_name: &'static str,
-    handler: Option<Box<dyn FnMut(&dyn Any) -> Propagation>>,
-}
-
 /// A registered interactive screen region. Populated every render frame
 /// by `register_mouse_region` (called from macro-generated code).
 ///
@@ -60,6 +317,8 @@ struct MouseRegion {
     /// Stable id derived from the owning component + per-component registration
     /// order — survives layout shifts caused by window resize.
     id: u64,
+    parent: Option<usize>,
+    component_id: u64,
     click_handler: Option<Box<dyn FnMut(MouseButton) -> Propagation>>,
     mousein_handler: Option<Box<dyn FnMut()>>,
     mouseout_handler: Option<Box<dyn FnMut()>>,
@@ -71,37 +330,45 @@ struct MouseRegion {
 struct HookRuntime {
     id_stack: Vec<u64>,
     sibling_counters: Vec<u32>,
-    hook_indices: Vec<u32>,
-    states: HashMap<(u64, u32), AnyCell>,
-    keyed_states: HashMap<&'static str, AnyCell>,
+    states: HashMap<(u64, HookSite), Box<dyn Any>>,
+    resources: HashMap<TypeId, Box<dyn Any>>,
+    seen_state_keys: HashSet<(u64, HookSite)>,
+    seen_components: HashSet<u64>,
+    pending_effects: Vec<Box<dyn FnOnce()>>,
     key_bindings: Vec<KeyBinding>,
-    /// Per-frame event listeners, re-registered every render (like key_bindings).
-    event_listeners: Vec<EventListener>,
     /// Per-frame mouse regions — rebuilt every render.
     mouse_regions: Vec<MouseRegion>,
     /// Which region ids were hovered last frame (for hover-enter tracking).
     prev_hovered: HashSet<u64>,
-    /// Maps a component ID to its ancestry path (the id_stack at the time of entry).
-    component_paths: HashMap<u64, Rc<Vec<u64>>>,
-    /// Bumped every time a `State` is mutated via `set`/`with_mut`.
-    /// Read by `memo` to decide whether to recompute.
-    versions: HashMap<StateKey, u64>,
+    hover_scratch: HashSet<u64>,
+    /// Parent links for focus and event bubbling. Unlike storing full paths,
+    /// this requires no per-component allocation during steady-state renders.
+    component_parents: HashMap<u64, Option<u64>>,
     chord_bindings: Vec<ChordBinding>,
     chord_pending: Vec<KeyEvent>,
     chord_last_event_at: Option<Instant>,
     /// Per-component count of mouse regions registered this frame — used
     /// to generate stable region IDs that survive layout shifts.
     mouse_region_idx: HashMap<u64, u32>,
+    mouse_region_stack: Vec<usize>,
+    focused_component: Option<u64>,
+    pending_component_keys: Vec<u64>,
 }
 
-thread_local! {
-    static RUNTIME: RefCell<HookRuntime> = RefCell::new(HookRuntime::default());
+pub struct MouseRegionGuard;
+
+impl Drop for MouseRegionGuard {
+    fn drop(&mut self) {
+        RUNTIME.with(|rt| {
+            rt.borrow_mut().mouse_region_stack.pop();
+        });
+    }
 }
 
 /// Call once per frame, before building the component tree, to reset
-/// per-frame bookkeeping. `state` values are untouched — they
-/// persist for the lifetime of the process (or until you drop the app).
-pub fn begin_frame() {
+/// per-frame bookkeeping. Hook state is preserved until its component or call
+/// site disappears, or until the owning runtime is dropped.
+fn begin_frame() {
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
         debug_assert!(
@@ -109,13 +376,63 @@ pub fn begin_frame() {
             "begin_frame() called while a #[component] is still on the stack"
         );
         rt.key_bindings.clear();
-        rt.event_listeners.clear();
         // mouse_regions are cleared here; prev_hovered is preserved across frames
         // so hover-enter detection works.
         rt.mouse_regions.clear();
         rt.chord_bindings.clear();
         // Reset per-component mouse region counters for the new frame.
         rt.mouse_region_idx.clear();
+        rt.mouse_region_stack.clear();
+        rt.seen_state_keys.clear();
+        rt.seen_components.clear();
+        rt.pending_effects.clear();
+    });
+}
+
+fn finish_frame() {
+    let (removed, effects) = RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let stale: Vec<_> = rt
+            .states
+            .keys()
+            .filter(|key| !rt.seen_state_keys.contains(key))
+            .copied()
+            .collect();
+        let removed = stale
+            .into_iter()
+            .filter_map(|key| rt.states.remove(&key))
+            .collect::<Vec<_>>();
+        if let Some(focused) = rt.focused_component
+            && !rt.seen_components.contains(&focused)
+        {
+            let mut candidate = rt.component_parents.get(&focused).copied().flatten();
+            while candidate.is_some_and(|component| !rt.seen_components.contains(&component)) {
+                candidate = candidate
+                    .and_then(|component| rt.component_parents.get(&component).copied().flatten());
+            }
+            rt.focused_component = candidate;
+        }
+        let HookRuntime {
+            component_parents,
+            seen_components,
+            ..
+        } = &mut *rt;
+        component_parents.retain(|component, _| seen_components.contains(component));
+        seen_components.clear();
+        rt.seen_state_keys.clear();
+        let effects = std::mem::take(&mut rt.pending_effects);
+        (removed, effects)
+    });
+    drop(removed);
+    let mut effects = effects;
+    for effect in effects.drain(..) {
+        effect();
+    }
+    RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        if rt.pending_effects.capacity() < effects.capacity() {
+            rt.pending_effects = effects;
+        }
     });
 }
 
@@ -126,42 +443,49 @@ pub fn begin_frame() {
 /// can be stopped at the appropriate layer.
 #[doc(hidden)]
 pub fn register_mouse_region(
+    component_id: u64,
     rect: Rect,
     click_handler: Option<Box<dyn FnMut(MouseButton) -> Propagation>>,
     mousein_handler: Option<Box<dyn FnMut()>>,
     mouseout_handler: Option<Box<dyn FnMut()>>,
     scrollx_handler: Option<Box<dyn FnMut(i16) -> Propagation>>,
     scrolly_handler: Option<Box<dyn FnMut(i16) -> Propagation>>,
-) {
+) -> MouseRegionGuard {
     // Derive a stable ID from (component_id, per-component registration count).
     // This survives layout shifts (window resize, scroll) because it doesn't
     // encode absolute screen coordinates.
     let id = RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
-        let comp = *rt.id_stack.last().unwrap_or(&0);
         let local_idx = {
-            let entry = rt.mouse_region_idx.entry(comp).or_insert(0);
+            let entry = rt.mouse_region_idx.entry(component_id).or_insert(0);
             let val = *entry;
             *entry += 1;
             val
         };
         let mut hasher = DefaultHasher::new();
-        comp.hash(&mut hasher);
+        component_id.hash(&mut hasher);
         local_idx.hash(&mut hasher);
         hasher.finish()
     });
 
     RUNTIME.with(|rt| {
-        rt.borrow_mut().mouse_regions.push(MouseRegion {
+        let mut rt = rt.borrow_mut();
+        let parent = rt.mouse_region_stack.last().copied();
+        let index = rt.mouse_regions.len();
+        rt.mouse_regions.push(MouseRegion {
             rect,
             id,
+            parent,
+            component_id,
             click_handler,
             mousein_handler,
             mouseout_handler,
             scrollx_handler,
             scrolly_handler,
         });
+        rt.mouse_region_stack.push(index);
     });
+    MouseRegionGuard
 }
 
 /// Returns the current number of registered mouse regions. Used to track
@@ -210,21 +534,6 @@ pub fn cull_mouse_regions(start: usize, end: usize) {
 // Mouse dispatch helpers
 // ---------------------------------------------------------------------------
 
-#[inline]
-fn rect_area(r: Rect) -> u32 {
-    u32::from(r.width) * u32::from(r.height)
-}
-
-/// Returns true when `outer` completely contains `inner` (not necessarily
-/// a *strict* superset — equal rects pass too).
-#[inline]
-fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
-    outer.x <= inner.x
-        && outer.y <= inner.y
-        && outer.x.saturating_add(outer.width) >= inner.x.saturating_add(inner.width)
-        && outer.y.saturating_add(outer.height) >= inner.y.saturating_add(inner.height)
-}
-
 /// Collect mouse-region indices on the bubbling path for the point `(col, row)`.
 ///
 /// The "target" is the smallest-area region containing the point (innermost
@@ -234,32 +543,14 @@ fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
 /// order for DOM-style event propagation.
 ///
 /// `has_handler` filters to only regions that have a relevant handler set.
-fn bubbling_path(col: u16, row: u16, has_handler: impl Fn(&MouseRegion) -> bool) -> Vec<usize> {
+fn mouse_target(col: u16, row: u16) -> Option<usize> {
     RUNTIME.with(|rt| {
-        let rt = rt.borrow();
-
-        let mut candidates: Vec<(usize, u32)> = rt
+        rt.borrow()
             .mouse_regions
             .iter()
             .enumerate()
-            .filter(|(_, r)| contains(r.rect, col, row) && has_handler(r))
-            .map(|(i, r)| (i, rect_area(r.rect)))
-            .collect();
-
-        if candidates.is_empty() {
-            return Vec::new();
-        }
-
-        // Smallest area = innermost = target
-        candidates.sort_by_key(|(_, area)| *area);
-        let target_rect = rt.mouse_regions[candidates[0].0].rect;
-
-        // Keep target + any region whose rect contains the target rect (true ancestors)
-        candidates
-            .into_iter()
-            .filter(|(i, _)| rect_contains_rect(rt.mouse_regions[*i].rect, target_rect))
-            .map(|(i, _)| i)
-            .collect()
+            .rev()
+            .find_map(|(index, region)| contains(region.rect, col, row).then_some(index))
     })
 }
 
@@ -272,36 +563,40 @@ fn bubbling_path(col: u16, row: u16, has_handler: impl Fn(&MouseRegion) -> bool)
 /// halts the bubble. Hover (`mousein`/`mouseout`) events fire for every
 /// region whose hover state changes (no propagation concept — they fire
 /// independently per region).
-pub fn dispatch_mouse(event: MouseEvent) {
+pub fn dispatch_mouse(event: MouseEvent) -> bool {
     let col = event.column;
     let row = event.row;
 
     match event.kind {
-        MouseEventKind::Down(button) => {
-            dispatch_mouse_click(col, row, button);
-        }
-        MouseEventKind::ScrollUp => {
-            dispatch_mouse_scroll_y(col, row, -1);
-        }
-        MouseEventKind::ScrollDown => {
-            dispatch_mouse_scroll_y(col, row, 1);
-        }
-        MouseEventKind::ScrollLeft => {
-            dispatch_mouse_scroll_x(col, row, -1);
-        }
-        MouseEventKind::ScrollRight => {
-            dispatch_mouse_scroll_x(col, row, 1);
-        }
-        MouseEventKind::Moved => {
-            dispatch_mouse_move(col, row);
-        }
-        _ => {}
+        MouseEventKind::Down(button) => dispatch_mouse_click(col, row, button),
+        MouseEventKind::ScrollUp => dispatch_mouse_scroll_y(col, row, -1),
+        MouseEventKind::ScrollDown => dispatch_mouse_scroll_y(col, row, 1),
+        MouseEventKind::ScrollLeft => dispatch_mouse_scroll_x(col, row, -1),
+        MouseEventKind::ScrollRight => dispatch_mouse_scroll_x(col, row, 1),
+        MouseEventKind::Moved => dispatch_mouse_move(col, row),
+        _ => false,
     }
 }
 
-fn dispatch_mouse_click(col: u16, row: u16, button: MouseButton) {
-    let indices = bubbling_path(col, row, |r| r.click_handler.is_some());
-    for i in indices {
+fn dispatch_mouse_click(col: u16, row: u16, button: MouseButton) -> bool {
+    let mut current = mouse_target(col, row);
+    let mut handled = current.is_some();
+    let focus_target = current.and_then(|index| {
+        RUNTIME.with(|rt| rt.borrow().mouse_regions.get(index).map(|r| r.component_id))
+    });
+    if let Some(component_id) = focus_target {
+        let changed = RUNTIME.with(|rt| {
+            let mut rt = rt.borrow_mut();
+            let changed = rt.focused_component != Some(component_id);
+            rt.focused_component = Some(component_id);
+            changed
+        });
+        if changed {
+            RUNTIME.request_redraw();
+        }
+    }
+    while let Some(i) = current {
+        current = RUNTIME.with(|rt| rt.borrow().mouse_regions.get(i).and_then(|r| r.parent));
         let handler_opt = RUNTIME.with(|rt| {
             rt.borrow_mut()
                 .mouse_regions
@@ -309,6 +604,7 @@ fn dispatch_mouse_click(col: u16, row: u16, button: MouseButton) {
                 .and_then(|r| r.click_handler.take())
         });
         if let Some(mut handler) = handler_opt {
+            handled = true;
             let prop = handler(button);
             RUNTIME.with(|rt| {
                 if let Some(r) = rt.borrow_mut().mouse_regions.get_mut(i) {
@@ -320,11 +616,14 @@ fn dispatch_mouse_click(col: u16, row: u16, button: MouseButton) {
             }
         }
     }
+    handled
 }
 
-fn dispatch_mouse_scroll_y(col: u16, row: u16, delta: i16) {
-    let indices = bubbling_path(col, row, |r| r.scrolly_handler.is_some());
-    for i in indices {
+fn dispatch_mouse_scroll_y(col: u16, row: u16, delta: i16) -> bool {
+    let mut current = mouse_target(col, row);
+    let mut handled = false;
+    while let Some(i) = current {
+        current = RUNTIME.with(|rt| rt.borrow().mouse_regions.get(i).and_then(|r| r.parent));
         let handler_opt = RUNTIME.with(|rt| {
             rt.borrow_mut()
                 .mouse_regions
@@ -332,6 +631,7 @@ fn dispatch_mouse_scroll_y(col: u16, row: u16, delta: i16) {
                 .and_then(|r| r.scrolly_handler.take())
         });
         if let Some(mut handler) = handler_opt {
+            handled = true;
             let prop = handler(delta);
             RUNTIME.with(|rt| {
                 if let Some(r) = rt.borrow_mut().mouse_regions.get_mut(i) {
@@ -343,11 +643,14 @@ fn dispatch_mouse_scroll_y(col: u16, row: u16, delta: i16) {
             }
         }
     }
+    handled
 }
 
-fn dispatch_mouse_scroll_x(col: u16, row: u16, delta: i16) {
-    let indices = bubbling_path(col, row, |r| r.scrollx_handler.is_some());
-    for i in indices {
+fn dispatch_mouse_scroll_x(col: u16, row: u16, delta: i16) -> bool {
+    let mut current = mouse_target(col, row);
+    let mut handled = false;
+    while let Some(i) = current {
+        current = RUNTIME.with(|rt| rt.borrow().mouse_regions.get(i).and_then(|r| r.parent));
         let handler_opt = RUNTIME.with(|rt| {
             rt.borrow_mut()
                 .mouse_regions
@@ -355,6 +658,7 @@ fn dispatch_mouse_scroll_x(col: u16, row: u16, delta: i16) {
                 .and_then(|r| r.scrollx_handler.take())
         });
         if let Some(mut handler) = handler_opt {
+            handled = true;
             let prop = handler(delta);
             RUNTIME.with(|rt| {
                 if let Some(r) = rt.borrow_mut().mouse_regions.get_mut(i) {
@@ -366,52 +670,74 @@ fn dispatch_mouse_scroll_x(col: u16, row: u16, delta: i16) {
             }
         }
     }
+    handled
 }
 
-fn dispatch_mouse_move(col: u16, row: u16) {
+fn dispatch_mouse_move(col: u16, row: u16) -> bool {
     let mut mousein_handlers_to_run = Vec::new();
     let mut mouseout_handlers_to_run = Vec::new();
 
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
-        let prev = rt.prev_hovered.clone();
-        let mut now_hovered = HashSet::new();
+        let prev = std::mem::take(&mut rt.prev_hovered);
+        let mut now_hovered = std::mem::take(&mut rt.hover_scratch);
+        now_hovered.clear();
 
-        for region in rt.mouse_regions.iter_mut() {
+        for (index, region) in rt.mouse_regions.iter_mut().enumerate() {
             if contains(region.rect, col, row) {
                 now_hovered.insert(region.id);
                 // Fire on:mousein only when the cursor first enters.
-                if !prev.contains(&region.id) {
-                    if let Some(handler) = region.mousein_handler.take() {
-                        mousein_handlers_to_run.push(handler);
-                    }
+                if !prev.contains(&region.id)
+                    && let Some(handler) = region.mousein_handler.take()
+                {
+                    mousein_handlers_to_run.push((index, handler));
                 }
             } else if prev.contains(&region.id) {
                 // Fire on:mouseout when the cursor leaves.
                 if let Some(handler) = region.mouseout_handler.take() {
-                    mouseout_handlers_to_run.push(handler);
+                    mouseout_handlers_to_run.push((index, handler));
                 }
             }
         }
         rt.prev_hovered = now_hovered;
+        rt.hover_scratch = prev;
+        rt.hover_scratch.clear();
     });
 
-    for mut handler in mousein_handlers_to_run {
+    let handled = !mousein_handlers_to_run.is_empty() || !mouseout_handlers_to_run.is_empty();
+    for (index, mut handler) in mousein_handlers_to_run {
         handler();
+        RUNTIME.with(|rt| {
+            if let Some(region) = rt.borrow_mut().mouse_regions.get_mut(index) {
+                region.mousein_handler = Some(handler);
+            }
+        });
     }
-    for mut handler in mouseout_handlers_to_run {
+    for (index, mut handler) in mouseout_handlers_to_run {
         handler();
+        RUNTIME.with(|rt| {
+            if let Some(region) = rt.borrow_mut().mouse_regions.get_mut(index) {
+                region.mouseout_handler = Some(handler);
+            }
+        });
     }
+    handled
 }
 
 #[inline]
 fn contains(rect: Rect, col: u16, row: u16) -> bool {
-    col >= rect.x && col < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+    col >= rect.x
+        && col < rect.x.saturating_add(rect.width)
+        && row >= rect.y
+        && row < rect.y.saturating_add(rect.height)
 }
 
 /// Run every handler registered this frame whose binding matches.
 /// Returns `true` if at least one handler fired.
 pub fn dispatch_key(event: KeyEvent) -> bool {
+    if event.kind == KeyEventKind::Release {
+        return false;
+    }
     // Figure out how deep the best `key_bindings` candidate is *before*
     // committing to chord handling. This is what was missing before:
     // chords used to run unconditionally and could swallow an event —
@@ -427,6 +753,41 @@ pub fn dispatch_key(event: KeyEvent) -> bool {
     dispatch_key_bindings(event)
 }
 
+fn is_on_focus_path(rt: &HookRuntime, component_id: u64) -> bool {
+    let Some(focused) = rt.focused_component else {
+        return true;
+    };
+    let mut current = Some(focused);
+    while let Some(id) = current {
+        if id == component_id {
+            return true;
+        }
+        current = rt.component_parents.get(&id).copied().flatten();
+    }
+    false
+}
+
+fn component_depth(rt: &HookRuntime, component_id: u64) -> usize {
+    let mut depth = 0;
+    let mut current = Some(component_id);
+    while let Some(id) = current {
+        depth += 1;
+        current = rt.component_parents.get(&id).copied().flatten();
+    }
+    depth
+}
+
+fn component_ancestry(rt: &HookRuntime, component_id: u64) -> Vec<u64> {
+    let mut path = Vec::with_capacity(component_depth(rt, component_id));
+    let mut current = Some(component_id);
+    while let Some(id) = current {
+        path.push(id);
+        current = rt.component_parents.get(&id).copied().flatten();
+    }
+    path.reverse();
+    path
+}
+
 /// Read-only lookup of the deepest `key_bindings` component whose matcher
 /// fires for `event`, without taking or running any handler. Used only to
 /// compare against chord candidates so the two systems can agree on who
@@ -436,88 +797,72 @@ fn peek_key_binding_target_depth(event: KeyEvent) -> Option<usize> {
         let rt = rt.borrow();
         rt.key_bindings
             .iter()
-            .filter(|binding| binding.handler.is_some() && (binding.matches)(&event))
-            .map(|binding| {
-                rt.component_paths
-                    .get(&binding.component_id)
-                    .map(|p| p.len())
-                    .unwrap_or(0)
+            .filter(|binding| {
+                binding.handler.is_some()
+                    && is_on_focus_path(&rt, binding.component_id)
+                    && (binding.matches)(&event)
             })
+            .map(|binding| component_depth(&rt, binding.component_id))
             .max()
     })
 }
 
 /// The regular (non-chord) dispatch path — this is the old body of
-/// `dispatch_key`, split out so `dispatch_key` can decide whether chords
-/// or plain bindings get first crack at an event.
 fn dispatch_key_bindings(event: KeyEvent) -> bool {
-    let mut matches: Vec<(usize, u64, usize)> = RUNTIME.with(|rt| {
+    let ancestry_path = RUNTIME.with(|rt| {
         let rt = rt.borrow();
+        if let Some(focused) = rt.focused_component {
+            return Some(component_ancestry(&rt, focused));
+        }
+
         rt.key_bindings
             .iter()
-            .enumerate()
-            .filter_map(|(i, binding)| {
-                if binding.handler.is_some() && (binding.matches)(&event) {
-                    let depth = rt
-                        .component_paths
-                        .get(&binding.component_id)
-                        .map(|p| p.len())
-                        .unwrap_or(0);
-                    Some((i, binding.component_id, depth))
-                } else {
-                    None
-                }
-            })
-            .collect()
+            .filter(|binding| binding.handler.is_some() && (binding.matches)(&event))
+            .max_by_key(|binding| component_depth(&rt, binding.component_id))
+            .map(|binding| component_ancestry(&rt, binding.component_id))
     });
 
-    if matches.is_empty() {
+    let Some(ancestry_path) = ancestry_path else {
         return false;
-    }
+    };
 
-    // Deepest matching component is the "target" — the thing the key was
-    // really meant for (e.g. the focused widget).
-    let target_id = matches
-        .iter()
-        .max_by_key(|(_, _, depth)| *depth)
-        .map(|(_, id, _)| *id)
-        .unwrap();
-
-    let ancestry_path = RUNTIME
-        .with(|rt| rt.borrow().component_paths.get(&target_id).cloned())
-        .unwrap_or_default();
-
-    // Only bindings on target's own ancestry chain get to bubble;
-    // unrelated matches elsewhere in the tree don't fire.
-    matches.retain(|(_, comp_id, _)| ancestry_path.contains(comp_id));
-    matches.sort_by(|a, b| b.2.cmp(&a.2)); // deepest first
-
-    let indices: Vec<usize> = matches.into_iter().map(|(i, _, _)| i).collect();
-    let handled = !indices.is_empty();
-
-    for i in indices {
-        let Some(mut handler) = RUNTIME.with(|rt| {
-            rt.borrow_mut()
-                .key_bindings
-                .get_mut(i)
-                .and_then(|binding| binding.handler.take())
-        }) else {
-            continue;
-        };
-
-        let propagation = handler(event);
-
-        RUNTIME.with(|rt| {
-            if let Some(binding) = rt.borrow_mut().key_bindings.get_mut(i) {
-                binding.handler = Some(handler);
+    let mut handled = false;
+    for component_id in ancestry_path.iter().rev().copied() {
+        let binding_count = RUNTIME.with(|rt| rt.borrow().key_bindings.len());
+        for index in 0..binding_count {
+            let matches = RUNTIME.with(|rt| {
+                let rt = rt.borrow();
+                rt.key_bindings.get(index).is_some_and(|binding| {
+                    binding.component_id == component_id
+                        && binding.handler.is_some()
+                        && (binding.matches)(&event)
+                })
+            });
+            if !matches {
+                continue;
             }
-        });
 
-        if propagation == Propagation::Stop {
-            break;
+            let Some(mut handler) = RUNTIME.with(|rt| {
+                rt.borrow_mut()
+                    .key_bindings
+                    .get_mut(index)
+                    .and_then(|binding| binding.handler.take())
+            }) else {
+                continue;
+            };
+
+            handled = true;
+            let propagation = handler(event);
+            RUNTIME.with(|rt| {
+                if let Some(binding) = rt.borrow_mut().key_bindings.get_mut(index) {
+                    binding.handler = Some(handler);
+                }
+            });
+            if propagation == Propagation::Stop {
+                return true;
+            }
         }
     }
-
     handled
 }
 
@@ -543,7 +888,9 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
         if timed_out {
             rt.chord_pending.clear();
         }
-        (!rt.chord_bindings.is_empty(), rt.chord_pending.clone())
+        let has_chords = !rt.chord_bindings.is_empty();
+        let pending = std::mem::take(&mut rt.chord_pending);
+        (has_chords, pending)
     });
 
     if !has_chords && pending.is_empty() {
@@ -563,16 +910,15 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
             let mut full_matches = Vec::new();
             let mut partial_depth: Option<usize> = None;
             for (i, binding) in rt.chord_bindings.iter().enumerate() {
-                let depth = rt
-                    .component_paths
-                    .get(&binding.component_id)
-                    .map(|p| p.len())
-                    .unwrap_or(0);
-                for alt in &binding.alternatives {
+                if !is_on_focus_path(&rt, binding.component_id) {
+                    continue;
+                }
+                let depth = component_depth(&rt, binding.component_id);
+                for alt in binding.alternatives {
                     if pending.len() > alt.len() {
                         continue;
                     }
-                    let step_ok = pending.iter().zip(alt).all(|(e, s)| s.matches(e));
+                    let step_ok = pending.iter().zip(*alt).all(|(e, s)| s.matches(e));
                     if !step_ok {
                         continue;
                     }
@@ -591,11 +937,12 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
     // to that instead. Either way the sequence is over, so clear pending.
     if !full_matches.is_empty() {
         let chord_target_depth = full_matches.iter().map(|(_, _, d)| *d).max().unwrap_or(0);
-        let key_wins = key_depth.map_or(false, |kd| kd >= chord_target_depth);
+        let key_wins = key_depth.is_some_and(|depth| depth >= chord_target_depth);
 
+        pending.clear();
         RUNTIME.with(|rt| {
             let mut rt = rt.borrow_mut();
-            rt.chord_pending.clear();
+            rt.chord_pending = pending;
             rt.chord_last_event_at = None;
         });
 
@@ -611,12 +958,10 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
             .map(|(_, id, _)| *id)
             .unwrap();
 
-        let ancestry_path = RUNTIME
-            .with(|rt| rt.borrow().component_paths.get(&target_id).cloned())
-            .unwrap_or_default();
+        let ancestry_path = RUNTIME.with(|rt| component_ancestry(&rt.borrow(), target_id));
 
         full_matches.retain(|(_, comp_id, _)| ancestry_path.contains(comp_id));
-        full_matches.sort_by(|a, b| b.2.cmp(&a.2)); // deepest first
+        full_matches.sort_by_key(|binding| std::cmp::Reverse(binding.2));
 
         for (i, _, _) in full_matches {
             let Some(mut handler) = RUNTIME.with(|rt| {
@@ -650,8 +995,12 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
     // case leave the chord's pending state completely untouched and let
     // key_bindings handle it.
     if let Some(depth) = partial_depth {
-        let key_wins = key_depth.map_or(false, |kd| kd >= depth);
+        let key_wins = key_depth.is_some_and(|key_depth| key_depth >= depth);
         if key_wins {
+            pending.pop();
+            RUNTIME.with(|rt| {
+                rt.borrow_mut().chord_pending = pending;
+            });
             return None;
         }
 
@@ -663,9 +1012,10 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
         return Some(true);
     }
 
+    pending.clear();
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
-        rt.chord_pending.clear();
+        rt.chord_pending = pending;
         rt.chord_last_event_at = None;
     });
 
@@ -676,15 +1026,19 @@ fn try_dispatch_chord(event: KeyEvent, key_depth: Option<usize>) -> Option<bool>
 }
 #[doc(hidden)]
 #[must_use]
-pub struct ComponentGuard;
+pub struct ComponentGuard {
+    active: bool,
+}
 
 impl Drop for ComponentGuard {
     fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
         RUNTIME.with(|rt| {
             let mut rt = rt.borrow_mut();
             rt.id_stack.pop();
             rt.sibling_counters.pop();
-            rt.hook_indices.pop();
         });
     }
 }
@@ -694,9 +1048,15 @@ impl Drop for ComponentGuard {
 /// call's position among its siblings.
 #[doc(hidden)]
 pub fn __enter_component(name: &'static str) -> ComponentGuard {
+    let active = CURRENT_RUNTIME.with(|stack| !stack.borrow().is_empty());
+    if !active {
+        return ComponentGuard { active: false };
+    }
+
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
-        let parent = *rt.id_stack.last().unwrap_or(&0);
+        let parent_component = rt.id_stack.last().copied();
+        let parent = parent_component.unwrap_or(0);
         let sibling_index = match rt.sibling_counters.last_mut() {
             Some(counter) => {
                 let value = *counter;
@@ -706,28 +1066,93 @@ pub fn __enter_component(name: &'static str) -> ComponentGuard {
             None => 0,
         };
 
-        let id = component_id(parent, name, sibling_index);
+        let id = match rt.pending_component_keys.last().copied() {
+            Some(key) => component_id(parent, name, key as u32) ^ key.rotate_left(23),
+            None => component_id(parent, name, sibling_index),
+        };
 
         rt.id_stack.push(id);
+        assert!(
+            rt.seen_components.insert(id),
+            "duplicate component key for `{name}` under the same parent"
+        );
         rt.sibling_counters.push(0);
-        rt.hook_indices.push(0);
 
-        // Always update the ancestry path — the component may have moved
-        // in the tree (e.g. inside a conditional) since the last frame.
-        let path_clone = Rc::new(rt.id_stack.clone());
-        rt.component_paths.insert(id, path_clone);
+        // Always update the parent: keyed components may move between frames.
+        rt.component_parents.insert(id, parent_component);
     });
-    ComponentGuard
+    ComponentGuard { active: true }
 }
 
 #[doc(hidden)]
-pub fn __next_component_id(name: &'static str) -> u64 {
+pub fn __with_component_key<K: Hash, R>(key: &K, f: impl FnOnce() -> R) -> R {
+    struct KeyGuard {
+        active: bool,
+    }
+    impl Drop for KeyGuard {
+        fn drop(&mut self) {
+            if !self.active {
+                return;
+            }
+            RUNTIME.with(|rt| {
+                rt.borrow_mut().pending_component_keys.pop();
+            });
+        }
+    }
+
+    let active = CURRENT_RUNTIME.with(|stack| !stack.borrow().is_empty());
+    if !active {
+        return f();
+    }
+
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    RUNTIME.with(|rt| rt.borrow_mut().pending_component_keys.push(hasher.finish()));
+    let _guard = KeyGuard { active: true };
+    f()
+}
+
+#[doc(hidden)]
+pub fn __current_component_id() -> u64 {
     RUNTIME.with(|rt| {
-        let rt = rt.borrow();
-        let parent = *rt.id_stack.last().unwrap_or(&0);
-        let sibling_index = *rt.sibling_counters.last().unwrap_or(&0);
-        component_id(parent, name, sibling_index)
+        *rt.borrow()
+            .id_stack
+            .last()
+            .expect("node behavior used outside a #[component] function")
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FocusHandle {
+    component_id: u64,
+}
+
+impl FocusHandle {
+    pub fn focus(self) {
+        RUNTIME.with(|rt| {
+            let mut rt = rt.borrow_mut();
+            if rt.focused_component != Some(self.component_id) {
+                rt.focused_component = Some(self.component_id);
+                drop(rt);
+                RUNTIME.request_redraw();
+            }
+        });
+    }
+
+    pub fn is_focused(self) -> bool {
+        RUNTIME.with(|rt| rt.borrow().focused_component == Some(self.component_id))
+    }
+}
+
+pub fn use_focus(active: bool) -> FocusHandle {
+    let component_id = __current_component_id();
+    let handle = FocusHandle { component_id };
+    if active {
+        RUNTIME.with(|rt| {
+            rt.borrow_mut().focused_component = Some(component_id);
+        });
+    }
+    handle
 }
 
 fn component_id(parent: u64, name: &'static str, sibling_index: u32) -> u64 {
@@ -738,66 +1163,69 @@ fn component_id(parent: u64, name: &'static str, sibling_index: u32) -> u64 {
     hasher.finish()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum StateKey {
-    Positional(u64, u32),
-    Keyed(&'static str),
+struct StateCell<T> {
+    value: RefCell<T>,
+    version: Cell<u64>,
+    redraw: RedrawHandle,
 }
 
-/// A handle to a persistent value. Cheap to clone (it's a shared
-/// pointer into the hook store), so it's fine to move copies into
-/// `use_key` closures.
+/// A typed handle to persistent state.
+///
+/// Access is a direct `Rc` + `RefCell` borrow. The runtime's erased hook store
+/// is consulted only when this handle is created during a render.
 pub struct State<T> {
-    key: StateKey,
-    _marker: std::marker::PhantomData<T>,
+    cell: Rc<StateCell<T>>,
 }
 
 impl<T> Clone for State<T> {
     fn clone(&self) -> Self {
-        *self
+        Self {
+            cell: self.cell.clone(),
+        }
     }
 }
-impl<T> Copy for State<T> {}
 
 impl<T: 'static> State<T> {
-    fn get_cell(&self) -> AnyCell {
-        RUNTIME.with(|rt| {
-            let rt = rt.borrow();
-            match self.key {
-                StateKey::Positional(comp, idx) => rt
-                    .states
-                    .get(&(comp, idx))
-                    .expect("state not found")
-                    .clone(),
-                StateKey::Keyed(k) => rt.keyed_states.get(k).expect("state not found").clone(),
-            }
-        })
+    fn new(value: T, redraw: RedrawHandle) -> Self {
+        Self {
+            cell: Rc::new(StateCell {
+                value: RefCell::new(value),
+                version: Cell::new(0),
+                redraw,
+            }),
+        }
+    }
+
+    fn version(&self) -> u64 {
+        self.cell.version.get()
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        let cell = self.get_cell();
-        let borrow = cell.borrow();
-        f(borrow.downcast_ref::<T>().expect("state type mismatch"))
+        f(&self.cell.value.borrow())
     }
 
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
-        let cell = self.get_cell();
         let result = {
-            let mut borrow = cell.borrow_mut();
-            f(borrow.downcast_mut::<T>().expect("state type mismatch"))
+            let mut borrow = self.cell.value.borrow_mut();
+            f(&mut borrow)
         };
-        RUNTIME.with(|rt| {
-            *rt.borrow_mut().versions.entry(self.key).or_insert(0) += 1;
-        });
+        self.cell.version.set(self.version().wrapping_add(1));
+        self.cell.redraw.request();
         result
     }
 
+    pub fn with_mut_untracked<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        f(&mut self.cell.value.borrow_mut())
+    }
+
     pub fn set(&self, value: T) {
-        let cell = self.get_cell();
-        *cell.borrow_mut() = Box::new(value);
-        RUNTIME.with(|rt| {
-            *rt.borrow_mut().versions.entry(self.key).or_insert(0) += 1;
-        });
+        *self.cell.value.borrow_mut() = value;
+        self.cell.version.set(self.version().wrapping_add(1));
+        self.cell.redraw.request();
+    }
+
+    pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        self.with_mut(f)
     }
 }
 
@@ -807,193 +1235,247 @@ impl<T: 'static + Clone> State<T> {
     }
 }
 
-/// Persistent state scoped to *this component's position in the tree*.
-/// Must be called unconditionally, in the same order, every render —
-/// same rule as React hooks.
+impl<T: 'static + PartialEq> State<T> {
+    pub fn set_if_changed(&self, value: T) -> bool {
+        let mut current = self.cell.value.borrow_mut();
+        if *current == value {
+            return false;
+        }
+        *current = value;
+        drop(current);
+        self.cell.version.set(self.version().wrapping_add(1));
+        self.cell.redraw.request();
+        true
+    }
+}
+
+/// Persistent mutable storage that does not schedule a redraw when changed.
+pub struct Stored<T>(Rc<RefCell<T>>);
+
+impl<T> Clone for Stored<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Stored<T> {
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&self.0.borrow())
+    }
+
+    pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        f(&mut self.0.borrow_mut())
+    }
+}
+
+impl<T: Clone> Stored<T> {
+    pub fn get(&self) -> T {
+        self.with(Clone::clone)
+    }
+}
+
+pub struct Memo<T>(Rc<T>);
+
+impl<T> Clone for Memo<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Deref for Memo<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+struct DependencyMemo<D, T> {
+    deps: D,
+    value: Memo<T>,
+}
+
+type Cleanup = Box<dyn FnOnce()>;
+
+struct EffectSlot<D> {
+    deps: D,
+    cleanup: Rc<RefCell<Option<Cleanup>>>,
+}
+
+impl<D> Drop for EffectSlot<D> {
+    fn drop(&mut self) {
+        if let Some(cleanup) = self.cleanup.borrow_mut().take() {
+            cleanup();
+        }
+    }
+}
+
+#[track_caller]
+fn hook_site() -> HookSite {
+    let location = std::panic::Location::caller();
+    (location.file(), location.line(), location.column())
+}
+
+fn current_redraw() -> RedrawHandle {
+    CURRENT_RUNTIME.with(|stack| {
+        stack
+            .borrow()
+            .last()
+            .expect("hook used outside Runtime::render")
+            .redraw
+            .clone()
+    })
+}
+
+/// Persistent state scoped to this component and source call site.
+///
+/// Conditional hooks are supported, but a hook call site may execute at most
+/// once in one component render. State at a skipped call site is discarded.
+#[track_caller]
 pub fn state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
+    let site = hook_site();
+    state_at(site, init)
+}
+
+#[track_caller]
+pub fn use_state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
+    state(init)
+}
+
+#[track_caller]
+pub fn use_ref<T: 'static>(init: impl FnOnce() -> T) -> Stored<T> {
+    let site = hook_site();
+    RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let component_id = *rt
+            .id_stack
+            .last()
+            .expect("use_ref() called outside of a #[component] function");
+        let key = (component_id, site);
+        assert!(rt.seen_state_keys.insert(key), "hook call site used twice");
+        rt.states
+            .entry(key)
+            .or_insert_with(|| Box::new(Stored(Rc::new(RefCell::new(init())))))
+            .downcast_ref::<Stored<T>>()
+            .unwrap_or_else(|| panic!("hook type changed at {}:{}:{}", site.0, site.1, site.2))
+            .clone()
+    })
+}
+
+#[track_caller]
+pub fn use_memo<D, T>(deps: D, compute: impl FnOnce() -> T) -> Memo<T>
+where
+    D: PartialEq + 'static,
+    T: 'static,
+{
+    let site = hook_site();
+    let mut compute = Some(compute);
+    RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let component_id = *rt
+            .id_stack
+            .last()
+            .expect("use_memo() called outside of a #[component] function");
+        let key = (component_id, site);
+        assert!(rt.seen_state_keys.insert(key), "hook call site used twice");
+        if let Some(entry) = rt.states.get_mut(&key) {
+            let entry = entry
+                .downcast_mut::<DependencyMemo<D, T>>()
+                .unwrap_or_else(|| panic!("memo type changed at {}:{}:{}", site.0, site.1, site.2));
+            if entry.deps != deps {
+                entry.deps = deps;
+                entry.value = Memo(Rc::new(compute.take().expect("memo compute consumed")()));
+            }
+            entry.value.clone()
+        } else {
+            let value = Memo(Rc::new(compute.take().expect("memo compute consumed")()));
+            rt.states.insert(
+                key,
+                Box::new(DependencyMemo {
+                    deps,
+                    value: value.clone(),
+                }),
+            );
+            value
+        }
+    })
+}
+
+#[track_caller]
+pub fn use_effect<D, F, C>(deps: D, effect: F)
+where
+    D: PartialEq + 'static,
+    F: FnOnce() -> C + 'static,
+    C: FnOnce() + 'static,
+{
+    let site = hook_site();
+    let mut effect = Some(effect);
+    let cleanup_to_run = RUNTIME.with(|rt| {
+        let mut rt = rt.borrow_mut();
+        let component_id = *rt
+            .id_stack
+            .last()
+            .expect("use_effect() called outside of a #[component] function");
+        let key = (component_id, site);
+        assert!(rt.seen_state_keys.insert(key), "hook call site used twice");
+
+        let mut schedule = None;
+        let mut cleanup_to_run = None;
+        match rt.states.get_mut(&key) {
+            Some(value) => {
+                let slot = value.downcast_mut::<EffectSlot<D>>().unwrap_or_else(|| {
+                    panic!("effect type changed at {}:{}:{}", site.0, site.1, site.2)
+                });
+                if slot.deps != deps {
+                    cleanup_to_run = slot.cleanup.borrow_mut().take();
+                    slot.deps = deps;
+                    schedule = Some(slot.cleanup.clone());
+                }
+            }
+            None => {
+                let cleanup = Rc::new(RefCell::new(None));
+                schedule = Some(cleanup.clone());
+                rt.states
+                    .insert(key, Box::new(EffectSlot { deps, cleanup }));
+            }
+        }
+
+        if let Some(cleanup) = schedule {
+            let effect = effect.take().expect("effect consumed");
+            rt.pending_effects.push(Box::new(move || {
+                *cleanup.borrow_mut() = Some(Box::new(effect()));
+            }));
+        }
+        cleanup_to_run
+    });
+    if let Some(cleanup) = cleanup_to_run {
+        cleanup();
+    }
+}
+
+fn state_at<T: 'static>(site: HookSite, init: impl FnOnce() -> T) -> State<T> {
+    let redraw = current_redraw();
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
         let component_id = *rt
             .id_stack
             .last()
             .expect("state() called outside of a #[component] function");
-        let index = {
-            let counter = rt
-                .hook_indices
-                .last_mut()
-                .expect("hook index stack unexpectedly empty");
-            let value = *counter;
-            *counter += 1;
-            value
-        };
-        rt.states
-            .entry((component_id, index))
-            .or_insert_with(|| Rc::new(RefCell::new(Box::new(init()) as Box<dyn Any>)));
-        State {
-            key: StateKey::Positional(component_id, index),
-            _marker: std::marker::PhantomData,
-        }
-    })
-}
-
-/// Access global state that you expect to already exist (initialized by
-/// some other `global_or` call earlier in
-/// the frame, or in a previous frame). Panics if it hasn't been created yet.
-///
-/// Use this when you're a "consumer" component that doesn't own the
-/// state's lifecycle — e.g. reading a theme that's set up once at the root.
-pub fn global<T: 'static>(key: &'static str) -> State<T> {
-    RUNTIME.with(|rt| {
+        let key = (component_id, site);
         assert!(
-            rt.borrow().keyed_states.contains_key(key),
-            "global::<{}>(\"{}\") read before it was initialized — \
-             call global_or somewhere first",
-            std::any::type_name::<T>(),
-            key
+            rt.seen_state_keys.insert(key),
+            "hook at {}:{}:{} was called more than once in one component render",
+            site.0,
+            site.1,
+            site.2
         );
-    });
-    State {
-        key: StateKey::Keyed(key),
-        _marker: std::marker::PhantomData,
-    }
-}
-
-/// Access global state, constructing it with `init` on first access.
-/// Accepts closures (`|| MyStruct { .. }`) and fn items (`MyStruct::new`)
-/// equally well since both satisfy `FnOnce() -> T`.
-pub fn global_or<T: 'static>(key: &'static str, init: impl FnOnce() -> T) -> State<T> {
-    RUNTIME.with(|rt| {
-        let mut rt = rt.borrow_mut();
-        rt.keyed_states
+        rt.states
             .entry(key)
-            .or_insert_with(|| Rc::new(RefCell::new(Box::new(init()) as Box<dyn Any>)));
-    });
-    State {
-        key: StateKey::Keyed(key),
-        _marker: std::marker::PhantomData,
-    }
-}
-
-/// Non-panicking existence check, for the rare case where you need to
-/// branch on whether the state has been created yet at all.
-pub fn try_use_global<T: 'static>(key: &'static str) -> Option<State<T>> {
-    let exists = RUNTIME.with(|rt| rt.borrow().keyed_states.contains_key(key));
-    exists.then_some(State {
-        key: StateKey::Keyed(key),
-        _marker: std::marker::PhantomData,
+            .or_insert_with(|| Box::new(State::new(init(), redraw)))
+            .downcast_ref::<State<T>>()
+            .unwrap_or_else(|| panic!("state type changed at {}:{}:{}", site.0, site.1, site.2))
+            .clone()
     })
-}
-
-/// Derives a value from another `State<T>` and caches it in its own
-/// hook slot, recomputed once every render.
-///
-/// The `compute` closure receives a shared `&T` reference — it must not
-/// mutate the source (`state` + explicit mutation for that).
-///
-/// Must be called unconditionally, in the same order, every render —
-/// same rule as `state`.
-pub fn computed<T: 'static, R: 'static>(
-    source: State<T>,
-    compute: impl FnOnce(&T) -> R,
-) -> State<R> {
-    // Borrow `source` read-only — this does NOT bump the version counter,
-    // which is correct since we're only reading.
-    let value: R = source.with(compute);
-
-    RUNTIME.with(|rt| {
-        let mut rt = rt.borrow_mut();
-        let component_id = *rt
-            .id_stack
-            .last()
-            .expect("computed() called outside of a #[component] function");
-        let index = {
-            let counter = rt
-                .hook_indices
-                .last_mut()
-                .expect("hook index stack unexpectedly empty");
-            let idx = *counter;
-            *counter += 1;
-            idx
-        };
-
-        let boxed: Box<dyn Any> = Box::new(value);
-        match rt.states.get(&(component_id, index)) {
-            Some(cell) => {
-                // Overwrite in place — same cell every frame, so the
-                // returned State<R> handle stays valid across renders.
-                *cell.borrow_mut() = boxed;
-            }
-            None => {
-                rt.states
-                    .insert((component_id, index), Rc::new(RefCell::new(boxed)));
-            }
-        }
-
-        State {
-            key: StateKey::Positional(component_id, index),
-            _marker: std::marker::PhantomData,
-        }
-    })
-}
-
-/// Derives a value from another `State<T>` and caches it in its own hook
-/// slot. The `compute` closure only re-runs when `source` has been mutated
-/// (via `set`/`with_mut`).
-///
-/// The `compute` closure receives a shared `&T` reference — it must not
-/// mutate the source (`state` + explicit mutation for that).
-///
-/// Must be called unconditionally, in the same order, every render — same
-/// rule as `state`.
-pub fn memo<T: 'static, R: 'static>(source: State<T>, compute: impl FnOnce(&T) -> R) -> State<R> {
-    // Claim this hook's slot first (bumps hook_indices like any other hook).
-    let (component_id, index) = RUNTIME.with(|rt| {
-        let mut rt = rt.borrow_mut();
-        let component_id = *rt
-            .id_stack
-            .last()
-            .expect("memo() called outside of a #[component] function");
-        let index = {
-            let counter = rt
-                .hook_indices
-                .last_mut()
-                .expect("hook index stack unexpectedly empty");
-            let idx = *counter;
-            *counter += 1;
-            idx
-        };
-        (component_id, index)
-    });
-    let computed_key = StateKey::Positional(component_id, index);
-
-    let current_version = RUNTIME.with(|rt| *rt.borrow().versions.get(&source.key).unwrap_or(&0));
-    let last_seen_version = RUNTIME.with(|rt| rt.borrow().versions.get(&computed_key).copied());
-    let exists = RUNTIME.with(|rt| rt.borrow().states.contains_key(&(component_id, index)));
-
-    let needs_recompute = !exists || last_seen_version != Some(current_version);
-
-    if needs_recompute {
-        // Read-only access — does NOT bump the source's version counter.
-        let value = source.with(compute);
-
-        RUNTIME.with(|rt| {
-            let mut rt = rt.borrow_mut();
-            let boxed: Box<dyn Any> = Box::new(value);
-            match rt.states.get(&(component_id, index)) {
-                Some(cell) => *cell.borrow_mut() = boxed,
-                None => {
-                    rt.states
-                        .insert((component_id, index), Rc::new(RefCell::new(boxed)));
-                }
-            }
-            rt.versions.insert(computed_key, current_version);
-        });
-    }
-
-    State {
-        key: computed_key,
-        _marker: std::marker::PhantomData,
-    }
 }
 
 /// A handle the current component can use to register key bindings
@@ -1047,8 +1529,8 @@ impl KeyHandle {
 
     pub fn on_chord(
         &self,
-        alternatives: Vec<Vec<ParsedKeySpec>>,
-        mut handler: impl FnMut() -> Propagation + 'static,
+        alternatives: &'static [&'static [ParsedKeySpec]],
+        handler: impl FnMut() -> Propagation + 'static,
     ) {
         RUNTIME.with(|rt| {
             let mut rt = rt.borrow_mut();
@@ -1059,7 +1541,7 @@ impl KeyHandle {
             rt.chord_bindings.push(ChordBinding {
                 component_id,
                 alternatives,
-                handler: Some(Box::new(move || handler())),
+                handler: Some(Box::new(handler)),
             });
         });
     }
@@ -1073,246 +1555,4 @@ pub fn use_key() -> KeyHandle {
             .expect("use_key() called outside of a #[component] function");
     });
     KeyHandle
-}
-
-// -------------------------------------------------------------------------
-// Custom events with bubbling
-// -------------------------------------------------------------------------
-
-/// A callable handle returned by [`emitter`]. Cheaply cloneable so it can
-/// be moved into multiple closures.
-///
-/// Calling it fires every [`listen`] listener registered for the same event
-/// name whose component is an ancestor of (or equal to) the emitting
-/// component, in **bubbling order** (closest ancestor first → root last).
-pub struct Emitter<T: 'static> {
-    event_name: &'static str,
-    component_id: u64,
-    _marker: std::marker::PhantomData<fn(T)>,
-}
-
-impl<T> Clone for Emitter<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T> Copy for Emitter<T> {}
-
-impl<T: 'static> Emitter<T> {
-    /// Emit the event, bubbling up through ancestor listeners.
-    pub fn emit(&self, data: T) {
-        let data_any: Box<dyn Any> = Box::new(data);
-
-        let ancestry_path = RUNTIME
-            .with(|rt| rt.borrow().component_paths.get(&self.component_id).cloned())
-            .expect("ancestry path not found");
-
-        // Collect matching listener indices ordered by bubbling:
-        // highest position in ancestry_path = closest ancestor = fires first.
-        let indices: Vec<usize> = RUNTIME.with(|rt| {
-            let rt = rt.borrow();
-            let mut matching: Vec<(usize, usize)> = rt
-                .event_listeners
-                .iter()
-                .enumerate()
-                .filter_map(|(i, listener)| {
-                    if listener.event_name != self.event_name {
-                        return None;
-                    }
-                    // rposition: last occurrence gives the deepest (closest) match.
-                    ancestry_path
-                        .iter()
-                        .rposition(|&id| id == listener.component_id)
-                        .map(|depth| (i, depth))
-                })
-                .collect();
-            // Descending by depth → closest ancestor fires first (bubbling).
-            matching.sort_by(|a, b| b.1.cmp(&a.1));
-            matching.into_iter().map(|(i, _)| i).collect()
-        });
-
-        for i in indices {
-            let Some(mut handler) = RUNTIME.with(|rt| {
-                rt.borrow_mut()
-                    .event_listeners
-                    .get_mut(i)
-                    .and_then(|listener| listener.handler.take())
-            }) else {
-                continue;
-            };
-
-            let propagation = handler(data_any.as_ref());
-
-            RUNTIME.with(|rt| {
-                if let Some(listener) = rt.borrow_mut().event_listeners.get_mut(i) {
-                    listener.handler = Some(handler);
-                }
-            });
-
-            if propagation == Propagation::Stop {
-                break;
-            }
-        }
-    }
-
-    /// Emit the event **globally** — every registered [`listen`] listener for
-    /// this event name is called, regardless of whether it is an ancestor of
-    /// the emitting component. Listeners fire in registration order.
-    ///
-    /// Use sparingly; prefer [`emit`](Self::emit) for normal parent-child
-    /// communication and reserve `emit_global` for app-wide broadcasts
-    /// (e.g. theme changes, global notifications).
-    pub fn emit_global(&self, data: T) {
-        let data_any: Box<dyn Any> = Box::new(data);
-
-        let indices: Vec<usize> = RUNTIME.with(|rt| {
-            rt.borrow()
-                .event_listeners
-                .iter()
-                .enumerate()
-                .filter_map(|(i, listener)| {
-                    if listener.event_name == self.event_name {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        });
-
-        for i in indices {
-            let Some(mut handler) = RUNTIME.with(|rt| {
-                rt.borrow_mut()
-                    .event_listeners
-                    .get_mut(i)
-                    .and_then(|listener| listener.handler.take())
-            }) else {
-                continue;
-            };
-
-            let propagation = handler(data_any.as_ref());
-
-            RUNTIME.with(|rt| {
-                if let Some(listener) = rt.borrow_mut().event_listeners.get_mut(i) {
-                    listener.handler = Some(handler);
-                }
-            });
-
-            if propagation == Propagation::Stop {
-                break;
-            }
-        }
-    }
-}
-
-/// Returns an [`Emitter`] that, when called, dispatches a typed custom
-/// event to every [`listen`] listener registered on an ancestor component
-/// (including this component itself), in bubbling order.
-///
-/// Must be called inside a `#[component]` function.
-///
-/// # Example
-/// ```ignore
-/// #[component]
-/// fn my_input<'a>() -> TuiNode<'a> {
-///     let keys  = use_key();
-///     let emit  = emitter::<String>("submitted");
-///     keys.on(KeyCode::Enter, move || emit.emit("hello".into()));
-///     tui! { <Input placeholder={"press Enter"} /> }
-/// }
-/// ```
-pub fn emitter<T: 'static>(event_name: &'static str) -> Emitter<T> {
-    let component_id = RUNTIME.with(|rt| {
-        let rt = rt.borrow();
-        *rt.id_stack
-            .last()
-            .expect("emitter() called outside of a #[component] function")
-    });
-    Emitter {
-        event_name,
-        component_id,
-        _marker: std::marker::PhantomData,
-    }
-}
-
-pub struct Bind<T: 'static> {
-    current: T,
-    emitter: Emitter<T>,
-}
-
-impl<T: Clone + 'static> Bind<T> {
-    pub fn get(&self) -> T {
-        self.current.clone()
-    }
-
-    pub fn set(&self, value: T) {
-        self.emitter.emit(value);
-    }
-}
-
-pub fn bind<T: Clone + 'static>(current: T, event_name: &'static str) -> Bind<T> {
-    Bind {
-        current,
-        emitter: emitter::<T>(event_name),
-    }
-}
-
-/// Registers a typed handler that receives custom events emitted by any
-/// descendant component (or the component itself) for the given event name.
-///
-/// Handlers receive a shared reference to the event data and return a
-/// [`Propagation`] value. Return [`Propagation::Stop`] to prevent the event
-/// from reaching further ancestors; return [`Propagation::Continue`] to let
-/// it keep bubbling.
-///
-/// Must be called inside a `#[component]` function.
-///
-/// # Example
-/// ```ignore
-/// #[component]
-/// fn parent<'a>() -> TuiNode<'a> {
-///     let log = state(Vec::<String>::new);
-///     listen::<String>("submitted", {
-///         let log = log.clone();
-///         move |msg: &String| {
-///             log.with_mut(|v| v.push(msg.clone()));
-///             Propagation::Continue
-///         }
-///     });
-///     tui! { <my_input /> }
-/// }
-/// ```
-pub fn listen<T: 'static>(
-    event_name: &'static str,
-    handler: impl FnMut(&T) -> Propagation + 'static,
-) {
-    RUNTIME.with(|rt| {
-        let component_id = *rt
-            .borrow()
-            .id_stack
-            .last()
-            .expect("listen() called outside of a #[component] function");
-        use_on_component_id(component_id, event_name, handler);
-    });
-}
-
-#[doc(hidden)]
-pub fn use_on_component_id<T: 'static>(
-    component_id: u64,
-    event_name: &'static str,
-    mut handler: impl FnMut(&T) -> Propagation + 'static,
-) {
-    RUNTIME.with(|rt| {
-        rt.borrow_mut().event_listeners.push(EventListener {
-            component_id,
-            event_name,
-            handler: Some(Box::new(move |data: &dyn Any| {
-                if let Some(typed) = data.downcast_ref::<T>() {
-                    handler(typed)
-                } else {
-                    Propagation::Continue
-                }
-            })),
-        });
-    });
 }

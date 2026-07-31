@@ -86,69 +86,61 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
 
     if is_active {
         let keys = use_key();
+        let down_offset = offset.clone();
+        let up_offset = offset.clone();
+        let right_offset = offset.clone();
+        let left_offset = offset.clone();
         keybindings!(keys, {
-            "down"  => move || offset.with_mut(|o| apply_scroll_delta(&mut o.1, 1)),
-            "up"    => move || offset.with_mut(|o| apply_scroll_delta(&mut o.1, -1)),
-            "right" => move || offset.with_mut(|o| apply_scroll_delta(&mut o.0, 1)),
-            "left"  => move || offset.with_mut(|o| apply_scroll_delta(&mut o.0, -1)),
+            "down"  => move || down_offset.with_mut(|o| apply_scroll_delta(&mut o.1, 1)),
+            "up"    => move || up_offset.with_mut(|o| apply_scroll_delta(&mut o.1, -1)),
+            "right" => move || right_offset.with_mut(|o| apply_scroll_delta(&mut o.0, 1)),
+            "left"  => move || left_offset.with_mut(|o| apply_scroll_delta(&mut o.0, -1)),
         });
     }
 
     // Unwrap a lone child instead of `TuiNode::fragment` — fragment always
     // wraps in `Fragment(vec![..])` even for one item, which would hide a
     // `TuiNode::Flex` from the pattern match below.
-    let mut child = match children.len() {
+    let child = match children.len() {
         1 => children.into_iter().next().unwrap(),
         _ => TuiNode::fragment(children),
     };
 
     let raw_offset = offset.get();
     let last_probe = probe_size.get();
+    let scroll_x_offset = offset.clone();
+    let scroll_y_offset = offset.clone();
+    let mouse_owner = reactatui::hooks::__current_component_id();
 
     TuiNode::Widget(Box::new(move |area: Rect, buf: &mut Buffer| {
         if area.width == 0 || area.height == 0 {
             return;
         }
 
-        register_mouse_region(
+        let _mouse_guard = register_mouse_region(
+            mouse_owner,
             area,
             None,
             None,
             None,
             Some(Box::new(move |delta: i16| {
-                offset.with_mut(|o| apply_scroll_delta(&mut o.0, delta));
+                scroll_x_offset.with_mut(|o| apply_scroll_delta(&mut o.0, delta));
                 ::reactatui::hooks::Propagation::Stop
             })),
             Some(Box::new(move |delta: i16| {
-                offset.with_mut(|o| apply_scroll_delta(&mut o.1, delta));
+                scroll_y_offset.with_mut(|o| apply_scroll_delta(&mut o.1, delta));
                 ::reactatui::hooks::Propagation::Stop
             })),
         );
 
         // --- Fast, exact path: Flex child with statically-known basis. ---
-        let mut flex_natural = match &child {
-            TuiNode::Flex(flex) => Some(flex.natural_size(area.width)),
-            TuiNode::Grid(grid) => Some(grid.natural_size((area.width, area.height))),
+        let natural_size = match &child {
+            TuiNode::Flex(flex) => flex.natural_size((area.width, area.height)),
+            TuiNode::Grid(grid) => grid.natural_size((area.width, area.height)),
             _ => None,
         };
-        // Fallback: if natural_size returned 0, it means it contains Auto items.
-        // Measure them using measure_natural_size.
-        if let Some((w, h)) = flex_natural {
-            if w == 0 || h == 0 {
-                if let TuiNode::Flex(flex) = child {
-                    // measure_natural_size consumes the node, so we can't render it here anymore.
-                    // Oh wait, measure_natural_size doesn't exist yet on FlexNode. I only added it to the plan. I should implement it in flex.rs or grid.rs. Or fallback to the existing heuristic.
-                    // Since I didn't add measure_natural_size in my previous flex.rs write (I skipped it because it requires taking ownership, making it hard), let's just let it fall through to the probe heuristic!
-                    flex_natural = None;
-                    child = TuiNode::Flex(flex); // restore
-                } else if let TuiNode::Grid(grid) = child {
-                    flex_natural = None;
-                    child = TuiNode::Grid(grid);
-                }
-            }
-        }
 
-        if let Some((natural_w, natural_h)) = flex_natural {
+        if let Some((natural_w, natural_h)) = natural_size {
             let canvas_w = natural_w.max(area.width);
             let canvas_h = natural_h.max(area.height);
             let clamped = clamp_offset(raw_offset, (canvas_w, canvas_h), (area.width, area.height));
@@ -239,17 +231,15 @@ mod tests {
 
     #[test]
     fn test_scroll_flex_child_and_opaque_child_span_viewport() {
-        reactatui::hooks::begin_frame();
-
         let area = Rect::new(0, 0, 40, 3);
-        let item1 = TuiNode::from_widget(
-            Paragraph::new("Item1").style(ratatui::style::Style::default().bg(Color::Blue)),
-        );
-        let flex = FlexNode::vertical(vec![FlexItemNode::new(item1)]);
-
-        let scroll_node = Scroll(false, vec![TuiNode::from(flex)]);
         let mut buf = Buffer::empty(area);
-        scroll_node.render(area, &mut buf);
+        Runtime::new().render_to_buffer(&mut buf, area, || {
+            let item = TuiNode::from_widget(
+                Paragraph::new("Item1").style(ratatui::style::Style::default().bg(Color::Blue)),
+            );
+            let flex = FlexNode::vertical(vec![FlexItemNode::new(item)]);
+            Scroll(false, vec![TuiNode::from(flex)])
+        });
 
         // Verify entire line 0 in Scroll buffer is Blue across 40 columns
         for x in 0..40 {

@@ -58,6 +58,7 @@ pub struct Style {
 
     /// Size along the primary axis.
     pub size: Size,
+    size_explicit: bool,
     /// Explicit width override.
     pub width: Option<Size>,
     /// Explicit height override.
@@ -101,7 +102,8 @@ impl Default for Style {
             align_self: None,
             justify_self: None,
             ignore: false,
-            size: Size::Auto,
+            size: Size::Fr(1),
+            size_explicit: false,
             width: None,
             height: None,
             min_width: None,
@@ -206,6 +208,7 @@ impl Style {
     }
     pub fn size(mut self, s: impl Into<Size>) -> Self {
         self.size = s.into();
+        self.size_explicit = true;
         self
     }
     pub fn width(mut self, w: impl Into<Size>) -> Self {
@@ -258,19 +261,19 @@ impl Style {
     }
 
     pub fn resolved_column_span(&self) -> usize {
-        if let (Some(start), Some(end)) = (self.column, self.column_end) {
-            if end > start {
-                return end - start;
-            }
+        if let (Some(start), Some(end)) = (self.column, self.column_end)
+            && end > start
+        {
+            return end - start;
         }
         self.column_span
     }
 
     pub fn resolved_row_span(&self) -> usize {
-        if let (Some(start), Some(end)) = (self.row, self.row_end) {
-            if end > start {
-                return end - start;
-            }
+        if let (Some(start), Some(end)) = (self.row, self.row_end)
+            && end > start
+        {
+            return end - start;
         }
         self.row_span
     }
@@ -318,11 +321,12 @@ impl Style {
             align_self: self.align_self.or(other.align_self),
             justify_self: self.justify_self.or(other.justify_self),
             ignore: self.ignore || other.ignore,
-            size: if self.size != Size::Auto {
+            size: if self.size_explicit {
                 self.size
             } else {
                 other.size
             },
+            size_explicit: self.size_explicit || other.size_explicit,
             width: self.width.or(other.width),
             height: self.height.or(other.height),
             min_width: self.min_width.or(other.min_width),

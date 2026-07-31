@@ -12,34 +12,45 @@ use quote::quote;
 
 pub fn gen_custom_component(element: &Element) -> TokenStream2 {
     let tag = element.tag.type_path_tokens();
-    let component_name = element.tag.type_name();
 
     if has_bind_prop(&element.props) {
         return quote! { compile_error!("bind props require the #[component] props metadata design to be finalized") };
     }
 
-    let event_hooks = component_event_hooks(element);
     let call = if element.tag.constructor.is_some() {
         gen_widget_component_call(element)
     } else {
         gen_function_component_call(element, tag)
     };
-
-    let wrapped = maybe_wrap_with_mouse(call, &element.props);
-
-    let with_events = if event_hooks.is_empty() {
-        wrapped
+    let call = if element.tag.constructor.is_none() {
+        match named_prop(&element.props, "key") {
+            Some(key) => quote! {{
+                let __reactatui_key = #key;
+                ::reactatui::hooks::__with_component_key(
+                    &(file!(), line!(), column!(), &__reactatui_key),
+                    || #call,
+                )
+            }},
+            None => quote! {
+                ::reactatui::hooks::__with_component_key(
+                    &(file!(), line!(), column!()),
+                    || #call,
+                )
+            },
+        }
     } else {
-        quote! {{
-            let __reactatui_child_id = ::reactatui::hooks::__next_component_id(#component_name);
-            #(#event_hooks)*
-            #wrapped
-        }}
+        call
+    };
+
+    let wrapped = if element.tag.constructor.is_some() {
+        maybe_wrap_with_mouse(call, &element.props)
+    } else {
+        call
     };
 
     let with_layout = match named_prop(&element.props, "layout") {
-        Some(layout_val) => quote! { ::reactatui::TuiNode::style(#with_events, #layout_val) },
-        None => with_events,
+        Some(layout_val) => quote! { ::reactatui::TuiNode::style(#wrapped, #layout_val) },
+        None => wrapped,
     };
 
     match named_prop(&element.props, "style") {
@@ -116,22 +127,6 @@ pub fn gen_dynamic_component(element: &Element) -> TokenStream2 {
     }
 }
 
-fn component_event_hooks(element: &Element) -> Vec<TokenStream2> {
-    element
-        .props
-        .iter()
-        .filter_map(|prop| match prop {
-            Prop::Event { kind, handler } if !is_mouse_event(kind) => {
-                let event_name = kind.as_str();
-                Some(quote! {
-                    ::reactatui::hooks::use_on_component_id(__reactatui_child_id, #event_name, #handler);
-                })
-            }
-            _ => None,
-        })
-        .collect()
-}
-
 fn gen_widget_component_call(element: &Element) -> TokenStream2 {
     let widget = gen_widget_expr(element, false);
     let widget = if element.children.is_empty() {
@@ -153,7 +148,10 @@ fn gen_function_component_call(element: &Element, tag: TokenStream2) -> TokenStr
     let positional = positional
         .filter(|args| !args.is_empty())
         .map(|args| quote! { #args, });
-    let props = component_prop_args(&element.props, &["children", "style", "layout", "slot"]);
+    let props = component_prop_args(
+        &element.props,
+        &["children", "key", "style", "layout", "slot"],
+    );
     let prop_checks = props.iter().map(|(name, _)| {
         let marker = crate::component_prop_marker(name);
         quote! { #tag::#marker(); }
@@ -176,11 +174,4 @@ fn gen_function_component_call(element: &Element, tag: TokenStream2) -> TokenStr
 fn gen_children_vec(element: &Element) -> TokenStream2 {
     let children = element.children.iter().map(gen_node);
     quote! { vec![#(#children),*] }
-}
-
-fn is_mouse_event(kind: &str) -> bool {
-    matches!(
-        kind,
-        "click" | "mousein" | "mouseout" | "scrollx" | "scrolly"
-    )
 }

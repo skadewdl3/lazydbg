@@ -1,8 +1,7 @@
 // crates/reactatui/src/layout/tracks.rs — replaces both TrackSize and FlexBasis
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Size {
-    /// Size to intrinsic content. This is the ONLY default, everywhere —
-    /// nothing grows unless you say `1fr`. No more "Auto secretly means grow".
+    /// Opt-in intrinsic sizing. This may require a content measurement pass.
     Auto,
     Length(u16),
     Percent(u16),
@@ -12,7 +11,7 @@ pub enum Size {
 }
 impl Default for Size {
     fn default() -> Self {
-        Size::Auto
+        Size::Fr(1)
     }
 }
 
@@ -127,12 +126,12 @@ pub fn resolve_sizes(units: &[Size], available: u16, auto_sizes: &[u16]) -> Vec<
         sizes[i] = clamped;
         used = used.saturating_add(clamped);
     }
-    if fr_total > 0 {
+    if let Some(fr_total) = std::num::NonZeroU32::new(fr_total) {
         let remaining = available.saturating_sub(used);
         let mut fr_used = 0u16;
         for (i, unit) in units.iter().enumerate() {
             if let Size::Fr(f) = unit {
-                let raw = (u32::from(remaining) * u32::from(*f)) / fr_total;
+                let raw = (u32::from(remaining) * u32::from(*f)) / fr_total.get();
                 let size = (raw as u16).min(remaining.saturating_sub(fr_used));
                 sizes[i] = size;
                 fr_used = fr_used.saturating_add(size);

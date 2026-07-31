@@ -5,6 +5,8 @@ use crate::template::ast::{
     Element, ElseBranch, ForNode, IfNode, MatchArm, MatchNode, Node, Prop, Tag,
 };
 
+type ElementChildren = (Vec<Node>, Vec<(Ident, Vec<Node>)>);
+
 pub struct Parser {
     tokens: Vec<TokenTree>,
     pos: usize,
@@ -150,7 +152,7 @@ impl Parser {
     fn parse_element_children_until_close(
         &mut self,
         close_tag: &Tag,
-    ) -> syn::Result<(Vec<Node>, Vec<(Ident, Vec<Node>)>)> {
+    ) -> syn::Result<ElementChildren> {
         let mut children = Vec::new();
         while !self.is_done() {
             if self.starts_closing_tag(Some(close_tag)) {

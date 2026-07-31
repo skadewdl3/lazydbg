@@ -58,25 +58,27 @@ fn apply_scroll_delta(offset: &mut u16, delta: i16) {
 /// tracked in *items*, not rows — every row is assumed to be exactly as
 /// tall as the first item, so no per-row-height bookkeeping is needed
 /// beyond that one measurement.
-
 fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
     let offset = state::<u16>(|| 0);
+    let mouse_owner = reactatui::hooks::__current_component_id();
 
     let raw_offset = offset.get();
+    let scroll_offset = offset.clone();
 
     TuiNode::Widget(Box::new(move |area: Rect, buf: &mut Buffer| {
         if area.width == 0 || area.height == 0 || items.is_empty() {
             return;
         }
 
-        register_mouse_region(
+        let _mouse_guard = register_mouse_region(
+            mouse_owner,
             area,
             None,
             None,
             None,
             None,
             Some(Box::new(move |delta: i16| {
-                offset.with_mut(|o| apply_scroll_delta(o, delta));
+                scroll_offset.with_mut(|o| apply_scroll_delta(o, delta));
                 ::reactatui::hooks::Propagation::Stop
             })),
         );
@@ -155,8 +157,6 @@ mod tests {
 
     #[test]
     fn test_list_non_virtualized_and_virtualized_items_fill_full_width() {
-        reactatui::hooks::begin_frame();
-
         let area = Rect::new(0, 0, 50, 4);
 
         // Styled item short text "Short" but background green across 50 cols
@@ -167,9 +167,11 @@ mod tests {
         };
 
         // 1) Non-virtualized list
-        let list_non_virt = List(false, vec![create_item(), create_item()]);
+        let runtime = Runtime::new();
         let mut buf_non_virt = Buffer::empty(area);
-        list_non_virt.render(area, &mut buf_non_virt);
+        runtime.render_to_buffer(&mut buf_non_virt, area, || {
+            List(false, vec![create_item(), create_item()])
+        });
 
         // Every column in line 0 should be styled Green
         for x in 0..50 {
@@ -181,12 +183,11 @@ mod tests {
             );
         }
 
-        reactatui::hooks::begin_frame();
-
         // 2) Virtualized list
-        let list_virt = List(true, vec![create_item(), create_item()]);
         let mut buf_virt = Buffer::empty(area);
-        list_virt.render(area, &mut buf_virt);
+        runtime.render_to_buffer(&mut buf_virt, area, || {
+            List(true, vec![create_item(), create_item()])
+        });
 
         // Every column in line 0 should be styled Green
         for x in 0..50 {

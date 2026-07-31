@@ -175,33 +175,41 @@ impl StatefulWidget for InputBase<'_> {
     }
 }
 
-/// A component input widget that tracks internal state, supports showing/hiding cursor,
-/// handles normal text editing keybinds, and emits `"submit"` when Enter is pressed.
+/// A component input widget that tracks internal state, handles text editing,
+/// and calls `on:submit` with the value on Enter or `None` on Escape.
 #[component]
-pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiNode<'a> {
+pub fn Input<'a>(
+    placeholder: &'a str,
+    focused: bool,
+    show_cursor: bool,
+    #[prop] on_submit: Callback<Option<String>>,
+) -> TuiNode<'a> {
     let state = state(InputState::default);
-    let submit_emitter = emitter::<Option<String>>("submit");
+    use_focus(focused);
 
     if focused {
         let keys = use_key();
-        let submit_emitter = submit_emitter;
-        let state = state;
+        let enter_submit = on_submit.clone();
+        let escape_submit = on_submit.clone();
+        let submit_state = state.clone();
+        let escape_state = state.clone();
+        let edit_state = state.clone();
 
         keybindings!(keys, {
             "enter" => move || {
-                let val = state.with_mut(|s| {
+                let val = submit_state.with_mut(|s| {
                     let temp = s.value.clone();
                     s.value.clear();
                     temp
               });
-                submit_emitter.emit(Some(val));
+                enter_submit.call(Some(val));
             },
             "esc" => move || {
-                state.with_mut(|s| s.value.clear());
-                submit_emitter.emit(None);
+                escape_state.with_mut(|s| s.value.clear());
+                escape_submit.call(None);
             },
             key(k) if !matches!(k.code, KeyCode::Tab | KeyCode::BackTab) => move |event| {
-                state.with_mut(|s| s.handle_key(event));
+                edit_state.with_mut(|s| s.handle_key(event));
                 Propagation::Stop
             }
         });

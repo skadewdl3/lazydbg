@@ -42,7 +42,25 @@ impl CssValue for TrackList {
                 .filter(|track| !track.is_empty())
                 .all(|track| deserialize_css::<flex::Size>(track).is_some())
             {
-                return Ok(css_literal_string(value));
+                let sizes = tracks
+                    .split(|ch: char| ch.is_ascii_whitespace() || ch == ',')
+                    .filter(|track| !track.is_empty())
+                    .map(
+                        |track| match deserialize_css::<flex::Size>(track).expect("validated") {
+                            flex::Size::Auto => quote! { ::reactatui::layout::Size::Auto },
+                            flex::Size::Length(value) => {
+                                quote! { ::reactatui::layout::Size::Length(#value) }
+                            }
+                            flex::Size::Fr(value) => {
+                                quote! { ::reactatui::layout::Size::Fr(#value) }
+                            }
+                            flex::Size::Percent(value) => {
+                                quote! { ::reactatui::layout::Size::Percent(#value) }
+                            }
+                        },
+                    )
+                    .collect::<Vec<_>>();
+                return Ok(quote! { vec![#(#sizes),*] });
             }
 
             return Err(invalid_layout_value(
@@ -575,11 +593,6 @@ fn invalid_layout_value(value: &TokenStream2, property: &str, expected: &str) ->
             "invalid value `{display_value}` for layout property `{property}`\nhelp: expected {expected}\nhelp: use `{{...}}` to pass a Rust expression instead"
         ),
     )
-}
-
-pub(crate) fn css_literal_string(value: TokenStream2) -> TokenStream2 {
-    let string = value.to_string();
-    quote! { #string }
 }
 
 pub(crate) fn deserialize_css<T>(value: &str) -> Option<T>

@@ -1,4 +1,3 @@
-use crate::interface::DbgSession;
 use crate::ui::Keybinds;
 use crate::ui::panes::Pane;
 use crate::ui::panes::logs::Logs;
@@ -6,6 +5,8 @@ use crate::ui::panes::{disassembly::Disassembly, frame::Frame, status::Status};
 use reactatui::keybindings;
 use reactatui::prelude::*;
 use reactatui_widgets::{Dialog, Input};
+
+use crate::app_state::AppState;
 
 #[derive(Copy, Clone)]
 enum InputUse {
@@ -15,53 +16,60 @@ enum InputUse {
 }
 
 /// The root UI component containing a title bar and the main multi-pane panel.
-/// Responds to global Esc key to trigger application quit.
+/// Owns application-wide key bindings and pane composition.
 #[component]
 pub fn Home<'a>() -> TuiNode<'a> {
-    let should_quit = global_or("should-quit", || false);
-    let session = global::<DbgSession>("dbg-session");
+    let app = resource::<AppState>();
+    let session = app.session.clone();
     let keys = use_key();
     let open = state(|| false);
     let input_use = state(|| InputUse::None);
 
-    let open_input = move |iu: InputUse| {
-        input_use.set(iu);
-        open.set(true)
-    };
+    let binary_open = open.clone();
+    let binary_use = input_use.clone();
+    let breakpoint_open = open.clone();
+    let breakpoint_use = input_use.clone();
+    let escape_open = open.clone();
+    let stop_session = session.clone();
+    let list_session = session.clone();
+    let run_session = session.clone();
+    let frames_session = session.clone();
+    let frames = app.frames.clone();
 
     keybindings!(keys, {
-       "q" => move || should_quit.set(true),
+       "q" => move || resource::<AppState>().should_quit.set(true),
        "tab" => move || Pane::next(),
        "shift+tab" | "backtab" => move || Pane::prev(),
-       "s" => move || session.with_mut(|s| s.stop()),
-       "o" => move || open_input(InputUse::Binary),
-       "b" => move || open_input(InputUse::Breakpoint),
-       "esc" => move || open.set(false),
-       "l" => move || session.with_mut(|s| s.list_breakpoints()),
-       "r" => move || session.with_mut(|s| s.run()),
-       "t" => move || session.with_mut(|s| s.frames()),
+       "s" => move || stop_session.with_mut(|s| s.stop()),
+       "o" => move || { binary_use.set(InputUse::Binary); binary_open.set(true); },
+       "b" => move || { breakpoint_use.set(InputUse::Breakpoint); breakpoint_open.set(true); },
+       "esc" => move || escape_open.set(false),
+       "l" => move || list_session.with_mut(|s| s.list_breakpoints()),
+       "r" => move || run_session.with_mut(|s| s.run()),
+       "t" => move || frames.set(frames_session.with_mut(|s| s.frames())),
     });
 
-    let submit_handler = move |string: &Option<String>| {
-        open.set(false);
-        if string.is_none() {
-            return Propagation::Stop;
-        }
-        let string = string.clone().unwrap();
-        match input_use.get() {
+    let submit_open = open.clone();
+    let submit_use = input_use.clone();
+    let submit_session = session.clone();
+    let submit_handler = move |string: Option<String>| {
+        submit_open.set(false);
+        let Some(string) = string else {
+            return;
+        };
+        match submit_use.get() {
             InputUse::Binary => {
-                session.with_mut(|s| {
+                submit_session.with_mut(|s| {
                     s.open_file(string.clone());
                 });
             }
             InputUse::Breakpoint => {
-                session.with_mut(|s| {
+                submit_session.with_mut(|s| {
                     s.set_breakpoint(string.clone());
                 });
             }
             _ => {}
         }
-        Propagation::Stop
     };
 
     let input = tui! {

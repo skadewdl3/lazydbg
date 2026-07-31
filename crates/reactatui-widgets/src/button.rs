@@ -1,21 +1,17 @@
 // crates/reactatui-widgets/src/button.rs
 use ratatui::{
     layout::Alignment,
+    style::{Modifier, Style},
     widgets::{Borders, Paragraph},
 };
-use reactatui::prelude::*;
+use reactatui::{keybindings, prelude::*};
 
 use crate::Block;
 
 /// A clickable, hoverable, keyboard-activatable button widget.
 ///
-/// Emits `"click"` with its label as a payload when activated — either by
-/// a left mouse click, or (when `focused` is `true`) by pressing Enter or
-/// Space. Disabled buttons render dimmed and never emit.
-///
-/// `style` is whatever you'd build with the `style!` macro — Button uses
-/// its color half as the idle appearance and derives hover (reversed) and
-/// disabled (dimmed) looks from it automatically:
+/// Calls `on:click` when activated by a left mouse click, or by Enter/Space
+/// while focused. Disabled buttons render dimmed and do not call it.
 ///
 /// ```ignore
 /// <Button
@@ -24,40 +20,106 @@ use crate::Block;
 ///     borders={Borders::ALL}
 ///     disabled={false}
 ///     focused={true}
+///     on:click={move || save()}
 /// />
 /// ```
-///
-/// Note: if `Button` is placed directly inside a `<Flex>`/`<Grid>`, a
-/// `style={..}` prop there is intercepted by the layout macro for that
-/// item's flex/grid placement instead of reaching this component — wrap
-/// it in a plain fragment or an intermediate component if you need both.
 #[component]
 pub fn Button<'a>(
     #[prop] label: &'a str,
     #[prop] borders: Borders,
     #[prop] disabled: bool,
+    #[prop] focused: bool,
+    #[prop] on_click: Action,
 ) -> TuiNode<'a> {
     let hovered = state(|| false);
-    let emit = emitter::<()>("click");
+    let hovered_in = hovered.clone();
+    let hovered_out = hovered.clone();
+    let mouse_click = on_click.clone();
+    use_focus(focused);
+    if focused && !disabled {
+        let keyboard_click = on_click.clone();
+        keybindings!(use_key(), {
+            "enter" | "space" => move || keyboard_click.call(),
+        });
+    }
+
+    let appearance = if disabled {
+        Style::default().add_modifier(Modifier::DIM)
+    } else if hovered.get() || focused {
+        Style::default().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default()
+    };
+    let button = TuiNode::from_widget(
+        Block::default()
+            .borders(borders)
+            .style(appearance)
+            .children(vec![TuiNode::from_widget(
+                Paragraph::new(label).alignment(Alignment::Center),
+            )]),
+    );
 
     tui! {
-        <Block::default
-            borders={borders}
+        <{button}
             on:click={move |btn| {
                 if !disabled && btn == ratatui::crossterm::event::MouseButton::Left {
-                    emit.emit(());
+                    mouse_click.call();
                 }
             }}
             on:mousein={move || {
                 if !disabled {
-                    hovered.set(true);
+                    hovered_in.set(true);
                 }
             }}
             on:mouseout={move || {
-                hovered.set(false);
+                hovered_out.set(false);
             }}
-        >
-            <Paragraph::new(label) alignment={Alignment::Center} />
-        </Block>
+        />
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    use ratatui::buffer::Buffer;
+    use ratatui::crossterm::event::{
+        Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+    use ratatui::layout::Rect;
+
+    use super::*;
+
+    #[test]
+    fn focused_button_activates_from_keyboard_and_mouse() {
+        let runtime = Runtime::new();
+        let calls = Rc::new(Cell::new(0));
+        let area = Rect::new(0, 0, 10, 3);
+        let mut buffer = Buffer::empty(area);
+        runtime.render_to_buffer(&mut buffer, area, {
+            let calls = calls.clone();
+            move || {
+                Button(
+                    "Save",
+                    Borders::ALL,
+                    false,
+                    true,
+                    Action::from(move || calls.set(calls.get() + 1)),
+                )
+            }
+        });
+
+        runtime.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        runtime.handle_event(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 1,
+            row: 1,
+            modifiers: KeyModifiers::NONE,
+        }));
+        assert_eq!(calls.get(), 2);
     }
 }

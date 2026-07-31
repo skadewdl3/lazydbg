@@ -1,4 +1,4 @@
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
 
 use crate::template::{
@@ -36,7 +36,7 @@ pub fn apply_builder_props(
             }
             Prop::Spread(value) => {
                 let _ = value;
-                return quote! { compile_error!("spread props are not supported by reactatui v0.3 yet") };
+                return quote! { compile_error!("spread props are not supported") };
             }
             Prop::Bind { name, value } => {
                 let _ = (name, value);
@@ -73,6 +73,10 @@ pub fn component_prop_args(props: &[Prop], skip_names: &[&str]) -> Vec<(Ident, T
             }
             Prop::Boolean(name) if !is_name_skipped(name, skip_names) => {
                 Some((name.clone(), quote! { true }))
+            }
+            Prop::Event { kind, handler } => {
+                let name = Ident::new(&format!("on_{kind}"), Span::call_site());
+                Some((name, quote! { ::core::convert::Into::into(#handler) }))
             }
             _ => None,
         })

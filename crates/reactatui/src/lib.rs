@@ -5,15 +5,18 @@ pub mod layout;
 pub mod measure;
 pub mod node;
 pub mod style;
+pub mod view;
 
-pub use reactatui_macros::{children, component, layout, tui};
+pub use reactatui_macros::{children, component, key_pattern as __key_pattern, layout, tui};
 
 pub use ext::FrameExt;
 pub use layout::{FlexItemNode, FlexNode, GridItemNode, GridNode, Padding};
 pub type Flex<'a> = FlexNode<'a>;
 pub type Grid<'a> = GridNode<'a>;
+pub use hooks::{EventOutcome, RedrawHandle, Runtime};
 pub use node::{StateHandle, TuiNode};
 pub use style::CombinedStyle;
+pub use view::{AnyView, View, WidgetView, view};
 
 /// Child nodes supplied to a component's `#[slot]` parameters.
 ///
@@ -62,8 +65,9 @@ impl<'a> Slot<'a> {
 
 pub mod prelude {
     pub use crate::hooks::{
-        Emitter, KeyHandle, Propagation, State, bind, computed, emitter, global, global_or, listen,
-        memo, state, try_use_global, use_key,
+        Action, Callback, FocusHandle, KeyHandle, Memo, Propagation, Resource, State, Stored,
+        resource, state, try_resource, use_effect, use_focus, use_key, use_memo, use_ref,
+        use_state,
     };
     // layout::Style/Align/Justify/FlexBasis stay out of the prelude glob —
     // this module already re-exports ratatui::style::Style below, and
@@ -71,8 +75,9 @@ pub mod prelude {
     // CombinedStyle and the `style!` macro are safe to include: neither
     // name collides with anything else here.
     pub use crate::{
-        CombinedStyle, Flex, FlexItemNode, FlexNode, FrameExt, Grid, GridItemNode, GridNode,
-        Padding, StateHandle, TuiNode, children, component, layout, style, tui,
+        AnyView, CombinedStyle, EventOutcome, Flex, FlexItemNode, FlexNode, FrameExt, Grid,
+        GridItemNode, GridNode, Padding, RedrawHandle, Runtime, StateHandle, TuiNode, WidgetView,
+        children, component, layout, style, tui, view,
     };
     pub use ratatui::{
         layout::{Alignment, Constraint, Direction, Layout, Rect},

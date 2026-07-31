@@ -9,7 +9,7 @@ mod template;
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, GenericArgument, ItemFn, PathArguments, Type, parse_macro_input};
+use syn::{Attribute, GenericArgument, ItemFn, LitStr, PathArguments, Type, parse_macro_input};
 
 use crate::template::{Parser, gen_fragment, gen_node};
 
@@ -30,6 +30,82 @@ pub fn tui(input: TokenStream) -> TokenStream {
         }
         Err(error) => error.to_compile_error().into(),
     }
+}
+
+/// Compiles a literal key or chord specification into a promoted static slice.
+#[doc(hidden)]
+#[proc_macro]
+pub fn key_pattern(input: TokenStream) -> TokenStream {
+    let literal = parse_macro_input!(input as LitStr);
+    match compile_key_pattern(&literal.value()) {
+        Ok(pattern) => pattern.into(),
+        Err(message) => syn::Error::new(literal.span(), message)
+            .to_compile_error()
+            .into(),
+    }
+}
+
+fn compile_key_pattern(spec: &str) -> Result<proc_macro2::TokenStream, String> {
+    let mut steps = Vec::new();
+    for step in spec.split('-') {
+        let parts: Vec<_> = step.split('+').map(str::trim).collect();
+        let Some(key) = parts.last().copied().filter(|key| !key.is_empty()) else {
+            return Err(format!("empty key in `{spec}`"));
+        };
+        let mut bits = 0u8;
+        for modifier in &parts[..parts.len() - 1] {
+            bits |= match modifier.to_ascii_lowercase().as_str() {
+                "shift" => 0b0000_0001,
+                "ctrl" | "control" => 0b0000_0010,
+                "alt" | "opt" | "option" => 0b0000_0100,
+                "super" | "cmd" | "command" | "meta" | "win" => 0b0000_1000,
+                other => return Err(format!("unknown modifier `{other}` in `{spec}`")),
+            };
+        }
+        let lower = key.to_ascii_lowercase();
+        let code = match lower.as_str() {
+            "esc" | "escape" => quote! { ::ratatui::crossterm::event::KeyCode::Esc },
+            "enter" | "return" => quote! { ::ratatui::crossterm::event::KeyCode::Enter },
+            "tab" => quote! { ::ratatui::crossterm::event::KeyCode::Tab },
+            "backtab" => quote! { ::ratatui::crossterm::event::KeyCode::BackTab },
+            "backspace" | "bs" => quote! { ::ratatui::crossterm::event::KeyCode::Backspace },
+            "left" => quote! { ::ratatui::crossterm::event::KeyCode::Left },
+            "right" => quote! { ::ratatui::crossterm::event::KeyCode::Right },
+            "up" => quote! { ::ratatui::crossterm::event::KeyCode::Up },
+            "down" => quote! { ::ratatui::crossterm::event::KeyCode::Down },
+            "home" => quote! { ::ratatui::crossterm::event::KeyCode::Home },
+            "end" => quote! { ::ratatui::crossterm::event::KeyCode::End },
+            "pageup" | "pgup" => quote! { ::ratatui::crossterm::event::KeyCode::PageUp },
+            "pagedown" | "pgdn" => quote! { ::ratatui::crossterm::event::KeyCode::PageDown },
+            "delete" | "del" => quote! { ::ratatui::crossterm::event::KeyCode::Delete },
+            "insert" | "ins" => quote! { ::ratatui::crossterm::event::KeyCode::Insert },
+            "space" => quote! { ::ratatui::crossterm::event::KeyCode::Char(' ') },
+            "null" => quote! { ::ratatui::crossterm::event::KeyCode::Null },
+            "minus" | "hyphen" => quote! { ::ratatui::crossterm::event::KeyCode::Char('-') },
+            "plus" => quote! { ::ratatui::crossterm::event::KeyCode::Char('+') },
+            function if function.starts_with('f') && function[1..].parse::<u8>().is_ok() => {
+                let number = function[1..].parse::<u8>().expect("checked above");
+                quote! { ::ratatui::crossterm::event::KeyCode::F(#number) }
+            }
+            _ if key.chars().count() == 1 => {
+                let character = key
+                    .chars()
+                    .next()
+                    .expect("checked length")
+                    .to_ascii_lowercase();
+                quote! { ::ratatui::crossterm::event::KeyCode::Char(#character) }
+            }
+            _ => return Err(format!("unrecognized key `{key}` in `{spec}`")),
+        };
+        let shifted = bits == 1 && (matches!(lower.as_str(), "tab") || key.chars().count() == 1);
+        steps.push(quote! {
+            ::reactatui::keys::ParsedKeySpec::__new(#bits, #code, #shifted)
+        });
+    }
+    Ok(quote! {{
+        const __REACTATUI_KEY_PATTERN: &[::reactatui::keys::ParsedKeySpec] = &[#(#steps),*];
+        __REACTATUI_KEY_PATTERN
+    }})
 }
 
 /// Builds a `reactatui::layout::Style` from CSS-like layout declarations.
@@ -384,7 +460,7 @@ fn is_parameter_marker(attr: &Attribute) -> bool {
 }
 
 fn is_reserved_component_prop(name: &syn::Ident) -> bool {
-    ["children", "layout", "slot", "style"]
+    ["children", "key", "layout", "slot", "style"]
         .iter()
         .any(|reserved| name == reserved)
 }

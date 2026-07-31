@@ -1,5 +1,3 @@
-use reactatui::hooks::global_or;
-
 use crate::interface::{
     DbgBackend,
     backend::{DbgBackendStatus, DbgFrame},
@@ -24,7 +22,7 @@ impl DbgSession {
         self.backend.kill();
     }
 
-    pub fn open_file<'a>(&mut self, path: String) {
+    pub fn open_file(&mut self, path: String) {
         self.backend.open_file(path.clone());
         self.backend.load_symbols(path);
     }
@@ -41,9 +39,7 @@ impl DbgSession {
         self.backend.run();
     }
 
-    pub fn frames(&mut self) {
-        let f = self.backend.frames().unwrap();
-        let frames = global_or::<Vec<Box<dyn DbgFrame>>>("frames", || Vec::new());
-        frames.set(f);
+    pub fn frames(&mut self) -> Vec<Box<dyn DbgFrame>> {
+        self.backend.frames().unwrap_or_default()
     }
 }

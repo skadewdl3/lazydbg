@@ -1,6 +1,6 @@
 use clap::Parser;
 use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{self, DisableMouseCapture, EnableMouseCapture},
     execute,
 };
 use reactatui::prelude::*;
@@ -8,10 +8,12 @@ use std::{io, time::Duration};
 use ui::Home;
 
 use crate::{
+    app_state::AppState,
     interface::{DbgBackend, DbgSession, gdb::GdbBackend},
     logger::init_logging,
 };
 
+mod app_state;
 mod interface;
 mod logger;
 mod ui;
@@ -24,12 +26,11 @@ struct Args {
     lldb: bool,
 }
 
-fn init<'a>(args: Args) -> Result<(), &'a str> {
+fn init<'a>(runtime: &Runtime, args: Args) -> Result<(), &'a str> {
     // Initialize a debug backend based on if the user passes
     // Initialize logging
 
     let logs = init_logging();
-    global_or("logs", || logs.clone());
 
     // --gdb or --lldb. Default is --gdb.
     let backend: Box<dyn DbgBackend> = {
@@ -44,16 +45,17 @@ fn init<'a>(args: Args) -> Result<(), &'a str> {
         }
     };
 
-    // Store the debug session in the global state
-    global_or("dbg-session", || DbgSession::new(backend));
+    // Install the application services and state in this runtime.
+    runtime.insert_resource(AppState::new(runtime, DbgSession::new(backend), logs));
 
     Ok(())
 }
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
+    let runtime = Runtime::new();
 
-    match init(args) {
+    match init(&runtime, args) {
         Ok(_) => (),
         Err(err) => {
             println!("Error: {}", err);
@@ -65,32 +67,24 @@ fn main() -> io::Result<()> {
     let mut terminal = ratatui::try_init()?;
     // Enable mouse events
     execute!(std::io::stderr(), EnableMouseCapture)?;
-    let result = run(&mut terminal);
+    let result = run(&mut terminal, runtime);
     execute!(std::io::stderr(), DisableMouseCapture)?;
     ratatui::restore();
     result
 }
 
-fn run(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
+fn run(terminal: &mut ratatui::DefaultTerminal, runtime: Runtime) -> io::Result<()> {
     loop {
-        reactatui::hooks::begin_frame();
-
-        terminal.draw(|frame| {
-            frame.render_node(Home(), frame.area());
-        })?;
+        if runtime.needs_render() {
+            terminal.draw(|frame| {
+                runtime.render(frame, frame.area(), Home);
+            })?;
+        }
 
         if event::poll(Duration::from_millis(16))? {
             // Drain all pending events to prevent lag when many events are queued (like fast mouse movements)
             loop {
-                match event::read()? {
-                    Event::Key(key) => {
-                        reactatui::hooks::dispatch_key(key);
-                    }
-                    Event::Mouse(mouse) => {
-                        reactatui::hooks::dispatch_mouse(mouse);
-                    }
-                    _ => {}
-                }
+                runtime.handle_event(event::read()?);
                 // Check if there are more events available immediately
                 if !event::poll(Duration::from_millis(0))? {
                     break;
@@ -98,7 +92,12 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
             }
         }
 
-        if global_or("should-quit", Default::default).get() {
+        if runtime
+            .resource::<AppState>()
+            .expect("AppState resource is installed")
+            .should_quit
+            .get()
+        {
             break;
         }
     }

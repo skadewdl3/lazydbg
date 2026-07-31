@@ -1,71 +1,71 @@
-use ratatui::widgets::{Borders, Paragraph};
+use ratatui::{
+    style::Modifier,
+    widgets::{Borders, Paragraph},
+};
 use reactatui::{
     TuiNode, component,
-    hooks::{Propagation, emitter, global_or, memo, state, use_key},
+    hooks::{resource, state, use_key},
     keybindings, tui,
 };
 use reactatui_widgets::{Block, List};
 
+use crate::app_state::AppState;
 use crate::interface::backend::DbgFrame;
 
 /// A single stack frame item component.
 #[component]
-pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, #[prop] active: bool) -> TuiNode<'a> {
+pub fn FrameItem<'a>(frame: &dyn DbgFrame, #[prop] active: bool) -> TuiNode<'a> {
     let level = frame.level().unwrap_or("?".into());
     let addr = frame.addr().unwrap_or("?".into());
     let func = frame.func().unwrap_or("?".into());
     let file = frame.file().unwrap_or("?".into());
     let line = frame.line().unwrap_or("?".into());
-    let emitter = emitter::<()>("frame_selected");
-
-    let thing = move |_| {
-        emitter.emit(());
-        Propagation::Stop
-    };
-
     // Format the frame information
     let text = format!("#{} {} {} ({}:{})", level, addr, func, file, line);
+    let row_style = if active {
+        ratatui::style::Style::default().add_modifier(Modifier::REVERSED)
+    } else {
+        ratatui::style::Style::default()
+    };
 
-    tui! {
-        <Paragraph::new(text)
-            on:click={thing}
-        />
-    }
+    TuiNode::from_widget(Paragraph::new(text).style(row_style))
 }
 
 #[component]
 pub fn Frame<'a>() -> TuiNode<'a> {
     // TODO: What happens when the frame count changes?
-    let frames = global_or::<Vec<Box<dyn DbgFrame>>>("frames", || Vec::new());
-    let frame_count = memo(frames, |f| f.len() as i64);
-    let selected_frame = state::<Option<i64>>(|| None);
+    let frames = resource::<AppState>().frames.clone();
+    let frame_count = frames.with(Vec::len);
+    let selected_frame = state(|| 0_usize);
     let keys = use_key();
+    let next_count = frame_count;
+    let next_selected = selected_frame.clone();
+    let previous_count = frame_count;
+    let previous_selected = selected_frame.clone();
 
     keybindings!(keys, {
        "j" | "down" => move || {
-           if frame_count.get() <= 0 { return; }
-           let current_frame = selected_frame.get().unwrap();
-           selected_frame.set(Some((current_frame + 1).rem_euclid(frame_count.get())));
+           if next_count == 0 { return; }
+           next_selected.update(|selected| *selected = (*selected + 1) % next_count);
        },
        "k" | "up" => move || {
-           if frame_count.get() <= 0 { return; }
-           let current_frame = selected_frame.get().unwrap();
-           selected_frame.set(Some((current_frame - 1).rem_euclid(frame_count.get())));
+           if previous_count == 0 { return; }
+           previous_selected.update(|selected| {
+               *selected = if *selected == 0 { previous_count - 1 } else { *selected - 1 };
+           });
        }
     });
 
-    if frame_count.get() > 0 && selected_frame.get().is_none() {
-        selected_frame.set(Some(0));
+    if frame_count > 0 && selected_frame.get() >= frame_count {
+        selected_frame.set(frame_count - 1);
     }
 
     tui! {
         <Block::default title="Stack Frame" borders={Borders::ALL}>
             <List virtual={false}>
-                for frame in frames.get() {
-                    <FrameItem(&frame)
-                        active={
-                            selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
-                        }
+                for (index, frame) in frames.get().into_iter().enumerate() {
+                    <FrameItem(frame.as_ref())
+                        active={selected_frame.get() == index}
                     />
                 }
             </List>
