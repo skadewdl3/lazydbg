@@ -85,17 +85,16 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
     let probe_size = state::<(u16, u16)>(|| (0, 0)); // fallback-path cache only
 
     if is_active {
-        let keys = use_key();
         let down_offset = offset.clone();
         let up_offset = offset.clone();
         let right_offset = offset.clone();
         let left_offset = offset.clone();
-        keybindings!(keys, {
+        keybindings! {
             "down"  => move || down_offset.with_mut(|o| apply_scroll_delta(&mut o.1, 1)),
             "up"    => move || up_offset.with_mut(|o| apply_scroll_delta(&mut o.1, -1)),
             "right" => move || right_offset.with_mut(|o| apply_scroll_delta(&mut o.0, 1)),
             "left"  => move || left_offset.with_mut(|o| apply_scroll_delta(&mut o.0, -1)),
-        });
+        }
     }
 
     // Unwrap a lone child instead of `TuiNode::fragment` — fragment always

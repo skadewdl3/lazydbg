@@ -2,7 +2,7 @@ use num_enum::TryFromPrimitive;
 use reactatui::hooks::resource;
 use strum::EnumCount;
 
-use crate::app_state::AppState;
+use crate::app_state::{APP_STATE_KEY, AppState};
 
 pub mod disassembly;
 pub mod frame;
@@ -19,13 +19,13 @@ pub enum Pane {
 
 impl Pane {
     pub fn is_active(&self) -> bool {
-        let state = resource::<AppState>().active_pane.clone();
+        let state = resource::<AppState>(APP_STATE_KEY).active_pane.clone();
         let current_pane = state.get();
         current_pane == *self
     }
 
     pub fn next() {
-        let state = resource::<AppState>().active_pane.clone();
+        let state = resource::<AppState>(APP_STATE_KEY).active_pane.clone();
         // eprintln!("state rn: {}", state.get() as u8);
         let current_pane = state.get();
         let next_pane = (current_pane as i16 + 1).rem_euclid(Pane::COUNT as i16);
@@ -33,7 +33,7 @@ impl Pane {
         state.set(Pane::try_from(next_pane).expect("Invalid pane!"));
     }
     pub fn prev() {
-        let state = resource::<AppState>().active_pane.clone();
+        let state = resource::<AppState>(APP_STATE_KEY).active_pane.clone();
         let current_pane = state.get();
         let prev_pane = (current_pane as i16 - 1).rem_euclid(Pane::COUNT as i16);
         state.set(Pane::try_from(prev_pane).expect("Invalid pane!"));

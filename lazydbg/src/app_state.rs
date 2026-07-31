@@ -6,6 +6,8 @@ use crate::{
     ui::panes::Pane,
 };
 
+pub const APP_STATE_KEY: &str = "app_state";
+
 pub struct AppState {
     pub should_quit: State<bool>,
     pub session: State<DbgSession>,

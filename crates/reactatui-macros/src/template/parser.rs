@@ -761,6 +761,27 @@ mod tests {
     }
 
     #[test]
+    fn braced_identifier_is_accepted_as_prop_shorthand() {
+        let result = Parser::new(quote! { <Button {disabled} /> }).parse_nodes_until_close(None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn prop_shorthand_rejects_non_identifier_expressions() {
+        let result =
+            Parser::new(quote! { <Button {settings.disabled} /> }).parse_nodes_until_close(None);
+        let Err(error) = result else {
+            panic!("non-identifier shorthand should fail");
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("attribute shorthand must be a single identifier")
+        );
+    }
+
+    #[test]
     fn non_string_literal_props_still_require_braces() {
         let result = Parser::new(quote! { <Block width=42 /> }).parse_nodes_until_close(None);
         let Err(error) = result else {

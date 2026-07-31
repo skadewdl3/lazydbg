@@ -3,6 +3,7 @@
 //! Provides the `tui!` macro for declaring TUI node trees and the `#[component]`
 //! attribute macro for functional components.
 
+mod closure_capture;
 mod layout;
 mod style;
 mod template;
@@ -13,10 +14,29 @@ use syn::{Attribute, GenericArgument, ItemFn, LitStr, PathArguments, Type, parse
 
 use crate::template::{Parser, gen_fragment, gen_node};
 
+/// Creates a move closure with an explicit per-variable capture list.
+///
+/// A bare identifier is moved, `&name` is borrowed, `&mut name` is mutably
+/// borrowed, and `+name` is cloned before being moved into the closure.
+/// Variables omitted from the capture list follow normal move-closure rules.
+///
+/// ```ignore
+/// let handler = lambda!(moved, &borrowed, &mut mut_borrowed, +cloned, || {
+///     // ...
+/// });
+/// ```
+#[proc_macro]
+pub fn lambda(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as closure_capture::ClosureInput);
+    closure_capture::expand(input).into()
+}
+
 /// Declares a tree of TUI nodes using an HTML-like JSX syntax.
 ///
 /// Supports basic control flow like `if` and `for`, and seamlessly integrates
-/// custom components and Ratatui widgets.
+/// custom components and Ratatui widgets. A braced identifier is shorthand for
+/// a prop with the same name, so `<Button {disabled} />` expands like
+/// `<Button disabled={disabled} />`.
 #[proc_macro]
 pub fn tui(input: TokenStream) -> TokenStream {
     match Parser::new(input.into()).parse_nodes_until_close(None) {
@@ -155,7 +175,9 @@ pub fn style(input: TokenStream) -> TokenStream {
 ///
 /// Unmarked parameters are positional constructor arguments. Only parameters
 /// marked `#[prop]` can be supplied as named template attributes; attribute
-/// order does not affect binding.
+/// order does not affect binding. `#[bind] State<T>` parameters receive state
+/// handles from `bind:name={state}`; `Option<State<T>>` makes a binding
+/// optional. `#[bind(default)]` receives `bind={state}`.
 ///
 /// A `#[slot]` parameter receives children marked with the same name through a
 /// `slot={...}` attribute. `#[slot(default)]` receives unmarked children.
@@ -174,7 +196,9 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     let mut prop_markers = Vec::new();
     let mut call_args = Vec::new();
     let mut slot_extractors = Vec::new();
+    let mut bind_extractors = Vec::new();
     let mut has_default_slot = false;
+    let mut has_default_bind = false;
     let mut slot_lifetime = None;
 
     for input_arg in &mut func.sig.inputs {
@@ -202,6 +226,11 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
                 .attrs
                 .iter()
                 .any(|attr| attr.path().is_ident("prop"));
+            let bind_attrs: Vec<_> = pat_type
+                .attrs
+                .iter()
+                .filter(|attr| attr.path().is_ident("bind"))
+                .collect();
             let prop_count = pat_type
                 .attrs
                 .iter()
@@ -234,6 +263,12 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
                     "a component parameter can only have one `prop` attribute",
                 ));
             }
+            if bind_attrs.len() > 1 {
+                errors.push(syn::Error::new_spanned(
+                    &pat_type.pat,
+                    "a component parameter can only have one `bind` attribute",
+                ));
+            }
             if is_prop && (!slot_attrs.is_empty() || is_children) {
                 errors.push(syn::Error::new_spanned(
                     &pat_type.pat,
@@ -246,8 +281,28 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
                     "a component parameter cannot be both `slot` and `children`",
                 ));
             }
+            if !bind_attrs.is_empty() && (is_prop || !slot_attrs.is_empty() || is_children) {
+                errors.push(syn::Error::new_spanned(
+                    &pat_type.pat,
+                    "a component parameter cannot combine `bind` with `prop`, `slot`, or `children`",
+                ));
+            }
 
-            if let Some(attr) = slot_attrs.first() {
+            if let Some(attr) = bind_attrs.first() {
+                match parse_bind_parameter(attr, &pat_type.ty) {
+                    Ok(binding) => {
+                        if binding.is_default && has_default_bind {
+                            errors.push(syn::Error::new_spanned(
+                                attr,
+                                "a component can only have one default binding",
+                            ));
+                        }
+                        has_default_bind |= binding.is_default;
+                        bind_extractors.push(binding.extractor(&arg_name));
+                    }
+                    Err(error) => errors.push(error),
+                }
+            } else if let Some(attr) = slot_attrs.first() {
                 match parse_slot_parameter(attr, &pat_type.ty) {
                     Ok(slot) => {
                         if slot.is_default && has_default_slot {
@@ -308,6 +363,9 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     render_sig.inputs.push(syn::parse_quote! {
         mut __reactatui_slots: ::reactatui::Slot<#slot_lifetime>
     });
+    render_sig.inputs.push(syn::parse_quote! {
+        mut __reactatui_bindings: ::reactatui::Bindings
+    });
 
     if !errors.is_empty() {
         let compile_errors = errors.into_iter().map(|error| error.to_compile_error());
@@ -357,6 +415,8 @@ pub fn component(_metadata: TokenStream, input: TokenStream) -> TokenStream {
             #[doc(hidden)]
             #visibility #render_sig {
                 #(#slot_extractors)*
+                #(#bind_extractors)*
+                __reactatui_bindings.assert_empty();
                 #component_name(#(#call_args),*)
             }
         }
@@ -378,6 +438,38 @@ struct SlotParameter {
     is_default: bool,
     is_optional: bool,
     lifetime: Option<syn::Lifetime>,
+}
+
+struct BindParameter {
+    is_default: bool,
+    is_optional: bool,
+    state_type: Type,
+}
+
+impl BindParameter {
+    fn extractor(&self, argument: &syn::Ident) -> proc_macro2::TokenStream {
+        let name = (!self.is_default).then(|| component_prop_name(argument));
+        let selector = match &name {
+            Some(name) => quote! { Some(#name) },
+            None => quote! { None },
+        };
+        let state_type = &self.state_type;
+        if self.is_optional {
+            quote! {
+                let #argument: Option<#state_type> = __reactatui_bindings.take(#selector);
+            }
+        } else {
+            let missing = name.as_ref().map_or_else(
+                || "required default binding was not provided".to_owned(),
+                |name| format!("required binding `{name}` was not provided"),
+            );
+            quote! {
+                let #argument: #state_type = __reactatui_bindings
+                    .take(#selector)
+                    .unwrap_or_else(|| panic!(#missing));
+            }
+        }
+    }
 }
 
 struct TuiNodeType {
@@ -446,6 +538,69 @@ fn parse_slot_parameter(attr: &Attribute, ty: &Type) -> syn::Result<SlotParamete
         is_optional,
         lifetime: node_type.lifetime,
     })
+}
+
+fn parse_bind_parameter(attr: &Attribute, ty: &Type) -> syn::Result<BindParameter> {
+    let is_default = match &attr.meta {
+        syn::Meta::Path(_) => false,
+        syn::Meta::List(_) => {
+            let value = attr.parse_args::<syn::Ident>()?;
+            if value != "default" {
+                return Err(syn::Error::new_spanned(
+                    value,
+                    "the only supported bind argument is `default`",
+                ));
+            }
+            true
+        }
+        syn::Meta::NameValue(_) => {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "write `#[bind]` or `#[bind(default)]`",
+            ));
+        }
+    };
+
+    if is_state_type(ty) {
+        return Ok(BindParameter {
+            is_default,
+            is_optional: false,
+            state_type: ty.clone(),
+        });
+    }
+    if let Some(state_type) = parse_wrapped_state_type(ty, "Option") {
+        return Ok(BindParameter {
+            is_default,
+            is_optional: true,
+            state_type,
+        });
+    }
+    Err(syn::Error::new_spanned(
+        ty,
+        "bind parameters must have type `State<T>` or `Option<State<T>>`",
+    ))
+}
+
+fn is_state_type(ty: &Type) -> bool {
+    last_type_segment(ty).is_some_and(|segment| segment.ident == "State")
+}
+
+fn parse_wrapped_state_type(ty: &Type, wrapper: &str) -> Option<Type> {
+    let segment = last_type_segment(ty)?;
+    if segment.ident != wrapper {
+        return None;
+    }
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+    let mut arguments = arguments.args.iter();
+    let GenericArgument::Type(inner) = arguments.next()? else {
+        return None;
+    };
+    if arguments.next().is_some() || !is_state_type(inner) {
+        return None;
+    }
+    Some(inner.clone())
 }
 
 fn parse_tui_node_type(ty: &Type) -> Option<TuiNodeType> {

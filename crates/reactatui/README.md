@@ -41,7 +41,7 @@ the component tree.
 
 - `State<T>` reads and writes through its own `Rc<RefCell<T>>`; repeated access
   does not query the erased hook map. Mutations request a redraw automatically.
-- `Stored<T>` (`use_ref`) is persistent mutable storage that does not redraw.
+- `Stored<T>` (`stored`) is persistent mutable storage that does not redraw.
 - Hooks use source call sites for identity. Conditional hooks are allowed, and
   skipped hook state is cleaned up after the frame.
 - Hook/component maps and frame queues retain their allocations between frames.
@@ -70,17 +70,19 @@ state and memo hooks.
 
 ## Hooks And Data
 
-`state` and `use_state` are aliases. The remaining built-in hooks are
-`use_ref`, `use_memo`, `use_effect`, `use_key`, and `use_focus`.
+The built-in hooks are `state`, `stored`, `memo`, `effect`, `keys`, and `focus`.
 
-Install application services once and read them by type inside components:
+`memo(|| compute())` automatically records `State::get` and `State::with`
+calls made while computing. It recomputes when any recorded state version
+changes, without comparing or hashing the state values, so those values do not
+need `Eq` or `PartialEq`. A memo that reads no state computes only once.
+
+Install application services lazily and read them by key inside components:
 
 ```rust,ignore
-runtime.insert_resource(AppState::new(&runtime));
-
 #[component]
 fn Status<'a>() -> TuiNode<'a> {
-    let app = resource::<AppState>();
+    let app = resource_or("app_state", || AppState::new(/* ... */));
     // ...
 }
 ```
@@ -96,6 +98,35 @@ tui! { <SaveButton on:save={move || save()} /> }
 ```
 
 There is no string-based emitter/listener bus in the runtime.
+
+## Two-Way Bindings
+
+Components can share a `State<T>` handle with their parent through a binding.
+Bindings are required unless their parameter is `Option<State<T>>`. Use
+`bind:name={...}` for named bindings and mark exactly one default binding with
+`#[bind(default)]` when the parent should use `bind={...}`.
+
+```rust,ignore
+#[component]
+fn Child(#[bind] value: State<String>) -> TuiNode<'static> {
+    let text = bind(value);
+    // text.set(...) updates the parent's state and requests a redraw.
+    TuiNode::empty()
+}
+
+#[component]
+fn Parent() -> TuiNode<'static> {
+    let input_text = state(String::new);
+    tui! { <Child bind:value={input_text} /> }
+}
+
+#[component]
+fn DefaultChild(#[bind(default)] value: State<String>) -> TuiNode<'static> {
+    TuiNode::empty()
+}
+
+// tui! { <DefaultChild bind={input_text} /> }
+```
 
 ## Identity And Layout
 
@@ -121,9 +152,9 @@ layout. Use `auto` only when intrinsic content measurement is actually needed.
 | Previous API | Runtime API |
 | --- | --- |
 | Process-global hooks | Own a `Runtime`; hooks remain free functions in components |
-| `global`, `global_or`, `try_use_global` | `Runtime::insert_resource` and typed `resource::<T>()` |
+| `global`, `global_or`, `try_use_global` | Keyed `resource::<T>(key)` and `resource_or(key, init)` |
 | String `emitter`, `listen`, `bind` | Typed `Action` / `Callback<T>` component props |
-| Source-based `computed` / `memo` | Dependency-based `use_memo(deps, compute)` |
+| Source-based `computed` / `memo` | State-tracking `memo(compute)` |
 | Manual frame/event dispatch | `Runtime::render` and `Runtime::handle_event` |
 | Always redraw | Gate `terminal.draw` with `Runtime::needs_render()` |
 | Positional hook slots | Source-call-site hook identity |

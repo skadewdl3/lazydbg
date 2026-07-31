@@ -56,10 +56,6 @@ pub fn named_prop(props: &[Prop], expected: &str) -> Option<TokenStream2> {
     })
 }
 
-pub fn has_bind_prop(props: &[Prop]) -> bool {
-    props.iter().any(|prop| matches!(prop, Prop::Bind { .. }))
-}
-
 /// Returns component props in stable name order.
 ///
 /// `#[component]` emits its hidden renderer with `#[prop]` parameters in the

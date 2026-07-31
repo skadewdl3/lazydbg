@@ -31,7 +31,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 #[component]
 fn HookView() -> TuiNode<'static> {
     let count = state(|| 0_u64);
-    let doubled = use_memo(count.get(), || count.get() * 2);
+    let doubled = memo(|| count.get() * 2);
     black_box(*doubled);
     tui! { <Paragraph::new("reactatui") /> }
 }

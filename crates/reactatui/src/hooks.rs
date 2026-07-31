@@ -1,4 +1,4 @@
-use std::any::{Any, TypeId};
+use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
@@ -179,25 +179,16 @@ impl Runtime {
     pub fn create_state<T: 'static>(&self, value: T) -> State<T> {
         State::new(value, self.redraw_handle())
     }
+}
 
-    pub fn insert_resource<T: 'static>(&self, value: T) -> Resource<T> {
-        let resource = Resource(Rc::new(value));
-        self.inner
-            .hooks
-            .borrow_mut()
-            .resources
-            .insert(TypeId::of::<T>(), Box::new(resource.clone()));
-        resource
-    }
+struct ResourceEntry {
+    type_name: &'static str,
+    value: Box<dyn Any>,
+}
 
-    pub fn resource<T: 'static>(&self) -> Option<Resource<T>> {
-        self.inner
-            .hooks
-            .borrow()
-            .resources
-            .get(&TypeId::of::<T>())
-            .and_then(|value| value.downcast_ref::<Resource<T>>())
-            .cloned()
+impl ResourceEntry {
+    fn downcast_resource<T: 'static>(&self) -> Option<&Resource<T>> {
+        self.value.downcast_ref::<Resource<T>>()
     }
 }
 
@@ -217,18 +208,58 @@ impl<T> Deref for Resource<T> {
     }
 }
 
-pub fn resource<T: 'static>() -> Resource<T> {
-    try_resource()
-        .unwrap_or_else(|| panic!("resource `{}` is not installed", std::any::type_name::<T>()))
+/// Returns the resource installed under `key` in the current runtime.
+///
+/// Panics with a descriptive message when the key is missing or contains a
+/// resource of a different concrete type.
+pub fn resource<T: 'static>(key: &str) -> Resource<T> {
+    RUNTIME.with(|rt| {
+        let rt = rt.borrow();
+        let Some(entry) = rt.resources.get(key) else {
+            panic!("resource key `{key}` is not installed");
+        };
+        entry
+            .downcast_resource::<T>()
+            .unwrap_or_else(|| {
+                panic!(
+                    "resource key `{key}` contains `{}`, but `{}` was requested",
+                    entry.type_name,
+                    std::any::type_name::<T>()
+                )
+            })
+            .clone()
+    })
 }
 
-pub fn try_resource<T: 'static>() -> Option<Resource<T>> {
+/// Returns the resource under `key`, installing a lazily constructed default.
+///
+/// `init` runs only when the key is absent. If the key already contains a
+/// different concrete type, this function panics rather than replacing it.
+pub fn resource_or<T: 'static>(key: &str, init: impl FnOnce() -> T) -> Resource<T> {
     RUNTIME.with(|rt| {
-        rt.borrow()
-            .resources
-            .get(&TypeId::of::<T>())
-            .and_then(|value| value.downcast_ref::<Resource<T>>())
-            .cloned()
+        let mut rt = rt.borrow_mut();
+        if let Some(entry) = rt.resources.get(key) {
+            return entry
+                .downcast_resource::<T>()
+                .unwrap_or_else(|| {
+                    panic!(
+                        "resource key `{key}` contains `{}`, but `{}` was requested",
+                        entry.type_name,
+                        std::any::type_name::<T>()
+                    )
+                })
+                .clone();
+        }
+
+        let resource = Resource(Rc::new(init()));
+        rt.resources.insert(
+            key.to_owned(),
+            ResourceEntry {
+                type_name: std::any::type_name::<T>(),
+                value: Box::new(resource.clone()),
+            },
+        );
+        resource
     })
 }
 
@@ -337,7 +368,7 @@ struct HookRuntime {
     id_stack: Vec<u64>,
     sibling_counters: Vec<u32>,
     states: HashMap<(u64, HookSite), Box<dyn Any>>,
-    resources: HashMap<TypeId, Box<dyn Any>>,
+    resources: HashMap<String, ResourceEntry>,
     seen_state_keys: HashSet<(u64, HookSite)>,
     seen_components: HashSet<u64>,
     pending_effects: Vec<Box<dyn FnOnce()>>,
@@ -1199,7 +1230,12 @@ impl FocusHandle {
     }
 }
 
-pub fn use_focus(active: bool) -> FocusHandle {
+/// Returns a handle for the current component and optionally gives it focus.
+///
+/// Pass `true` when the component should become the keyboard focus target for
+/// this frame. The returned handle can also focus the component later or query
+/// whether it currently owns focus.
+pub fn focus(active: bool) -> FocusHandle {
     let component_id = __current_component_id();
     let handle = FocusHandle { component_id };
     if active {
@@ -1220,7 +1256,7 @@ fn component_id(parent: u64, name: &'static str, sibling_index: u32) -> u64 {
 
 struct StateCell<T> {
     value: RefCell<T>,
-    version: Cell<u64>,
+    version: Rc<Cell<u64>>,
     redraw: RedrawHandle,
 }
 
@@ -1245,7 +1281,7 @@ impl<T: 'static> State<T> {
         Self {
             cell: Rc::new(StateCell {
                 value: RefCell::new(value),
-                version: Cell::new(0),
+                version: Rc::new(Cell::new(0)),
                 redraw,
             }),
         }
@@ -1256,6 +1292,7 @@ impl<T: 'static> State<T> {
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        track_memo_dependency(&self.cell.version);
         f(&self.cell.value.borrow())
     }
 
@@ -1304,6 +1341,14 @@ impl<T: 'static + PartialEq> State<T> {
     }
 }
 
+/// Returns a state handle received through a component binding.
+///
+/// This mirrors `v-model` style usage while retaining the same shared state
+/// cell, so updates through the returned handle update the parent state.
+pub fn bind<T>(state: State<T>) -> State<T> {
+    state
+}
+
 /// Persistent mutable storage that does not schedule a redraw when changed.
 pub struct Stored<T>(Rc<RefCell<T>>);
 
@@ -1345,9 +1390,80 @@ impl<T> Deref for Memo<T> {
     }
 }
 
-struct DependencyMemo<D, T> {
-    deps: D,
+struct MemoDependency {
+    version: Rc<Cell<u64>>,
+    observed: u64,
+}
+
+impl MemoDependency {
+    fn is_current(&self) -> bool {
+        self.version.get() == self.observed
+    }
+}
+
+struct TrackedMemo<T> {
+    dependencies: Vec<MemoDependency>,
     value: Memo<T>,
+}
+
+thread_local! {
+    static MEMO_DEPENDENCY_STACK: RefCell<Vec<Vec<MemoDependency>>> = const { RefCell::new(Vec::new()) };
+}
+
+struct MemoDependencyCollector {
+    active: bool,
+}
+
+impl MemoDependencyCollector {
+    fn begin() -> Self {
+        MEMO_DEPENDENCY_STACK.with(|stack| stack.borrow_mut().push(Vec::new()));
+        Self { active: true }
+    }
+
+    fn finish(mut self) -> Vec<MemoDependency> {
+        self.active = false;
+        MEMO_DEPENDENCY_STACK.with(|stack| {
+            stack
+                .borrow_mut()
+                .pop()
+                .expect("memo dependency collector stack is empty")
+        })
+    }
+}
+
+impl Drop for MemoDependencyCollector {
+    fn drop(&mut self) {
+        if self.active {
+            MEMO_DEPENDENCY_STACK.with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        }
+    }
+}
+
+fn track_memo_dependency(version: &Rc<Cell<u64>>) {
+    MEMO_DEPENDENCY_STACK.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        let Some(dependencies) = stack.last_mut() else {
+            return;
+        };
+        if dependencies
+            .iter()
+            .any(|dependency| Rc::ptr_eq(&dependency.version, version))
+        {
+            return;
+        }
+        dependencies.push(MemoDependency {
+            version: version.clone(),
+            observed: version.get(),
+        });
+    });
+}
+
+fn compute_memo<T>(compute: impl FnOnce() -> T) -> (Memo<T>, Vec<MemoDependency>) {
+    let collector = MemoDependencyCollector::begin();
+    let value = Memo(Rc::new(compute()));
+    (value, collector.finish())
 }
 
 type Cleanup = Box<dyn FnOnce()>;
@@ -1392,20 +1508,19 @@ pub fn state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
     state_at(site, init)
 }
 
+/// Persistent mutable storage scoped to this component and source call site.
+///
+/// Unlike [`state`], mutations do not request a redraw. This is useful for
+/// values that must survive renders but do not directly affect rendered output.
 #[track_caller]
-pub fn use_state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
-    state(init)
-}
-
-#[track_caller]
-pub fn use_ref<T: 'static>(init: impl FnOnce() -> T) -> Stored<T> {
+pub fn stored<T: 'static>(init: impl FnOnce() -> T) -> Stored<T> {
     let site = hook_site();
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
         let component_id = *rt
             .id_stack
             .last()
-            .expect("use_ref() called outside of a #[component] function");
+            .expect("stored() called outside of a #[component] function");
         let key = (component_id, site);
         assert!(rt.seen_state_keys.insert(key), "hook call site used twice");
         rt.states
@@ -1417,10 +1532,14 @@ pub fn use_ref<T: 'static>(init: impl FnOnce() -> T) -> Stored<T> {
     })
 }
 
+/// Memoizes a computed value until state read by its closure changes.
+///
+/// Calls to [`State::get`] and [`State::with`] inside `compute` are tracked by
+/// state identity and version. The stored state values do not need to implement
+/// [`PartialEq`] and are never compared or hashed.
 #[track_caller]
-pub fn use_memo<D, T>(deps: D, compute: impl FnOnce() -> T) -> Memo<T>
+pub fn memo<T>(compute: impl FnOnce() -> T) -> Memo<T>
 where
-    D: PartialEq + 'static,
     T: 'static,
 {
     let site = hook_site();
@@ -1430,24 +1549,27 @@ where
         let component_id = *rt
             .id_stack
             .last()
-            .expect("use_memo() called outside of a #[component] function");
+            .expect("memo() called outside of a #[component] function");
         let key = (component_id, site);
         assert!(rt.seen_state_keys.insert(key), "hook call site used twice");
         if let Some(entry) = rt.states.get_mut(&key) {
             let entry = entry
-                .downcast_mut::<DependencyMemo<D, T>>()
+                .downcast_mut::<TrackedMemo<T>>()
                 .unwrap_or_else(|| panic!("memo type changed at {}:{}:{}", site.0, site.1, site.2));
-            if entry.deps != deps {
-                entry.deps = deps;
-                entry.value = Memo(Rc::new(compute.take().expect("memo compute consumed")()));
+            if !entry.dependencies.iter().all(MemoDependency::is_current) {
+                let (value, dependencies) =
+                    compute_memo(compute.take().expect("memo compute consumed"));
+                entry.value = value;
+                entry.dependencies = dependencies;
             }
             entry.value.clone()
         } else {
-            let value = Memo(Rc::new(compute.take().expect("memo compute consumed")()));
+            let (value, dependencies) =
+                compute_memo(compute.take().expect("memo compute consumed"));
             rt.states.insert(
                 key,
-                Box::new(DependencyMemo {
-                    deps,
+                Box::new(TrackedMemo {
+                    dependencies,
                     value: value.clone(),
                 }),
             );
@@ -1456,8 +1578,12 @@ where
     })
 }
 
+/// Schedules an effect after rendering when its dependencies change.
+///
+/// The effect returns a cleanup closure. Cleanup runs before the effect is
+/// replaced and when its component or call site is removed from the tree.
 #[track_caller]
-pub fn use_effect<D, F, C>(deps: D, effect: F)
+pub fn effect<D, F, C>(deps: D, effect: F)
 where
     D: PartialEq + 'static,
     F: FnOnce() -> C + 'static,
@@ -1470,7 +1596,7 @@ where
         let component_id = *rt
             .id_stack
             .last()
-            .expect("use_effect() called outside of a #[component] function");
+            .expect("effect() called outside of a #[component] function");
         let key = (component_id, site);
         assert!(rt.seen_state_keys.insert(key), "hook call site used twice");
 
@@ -1602,12 +1728,16 @@ impl KeyHandle {
     }
 }
 
-pub fn use_key() -> KeyHandle {
+/// Returns a handle for registering this component's key bindings for the frame.
+///
+/// Bindings are rebuilt on every render and participate in focus-aware event
+/// propagation through the component ancestry.
+pub fn keys() -> KeyHandle {
     RUNTIME.with(|rt| {
         rt.borrow()
             .id_stack
             .last()
-            .expect("use_key() called outside of a #[component] function");
+            .expect("keys() called outside of a #[component] function");
     });
     KeyHandle
 }

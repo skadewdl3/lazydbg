@@ -33,12 +33,12 @@ pub fn Button<'a>(
     let hovered_in = hovered.clone();
     let hovered_out = hovered.clone();
     let mouse_click = on_click.clone();
-    use_focus(focused);
+    focus(focused);
     if focused && !disabled {
         let keyboard_click = on_click.clone();
-        keybindings!(use_key(), {
+        keybindings! {
             "enter" | "space" => move || keyboard_click.call(),
-        });
+        }
     }
 
     let appearance = style! {

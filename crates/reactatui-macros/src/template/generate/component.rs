@@ -1,7 +1,7 @@
 use crate::template::{
     ast::{Element, Prop},
     generate::{
-        builder::{component_prop_args, has_bind_prop, named_prop},
+        builder::{component_prop_args, named_prop},
         gen_node,
         misc::gen_widget_expr,
         mouse::maybe_wrap_with_mouse,
@@ -12,10 +12,6 @@ use quote::quote;
 
 pub fn gen_custom_component(element: &Element) -> TokenStream2 {
     let tag = element.tag.type_path_tokens();
-
-    if has_bind_prop(&element.props) {
-        return quote! { compile_error!("bind props require the #[component] props metadata design to be finalized") };
-    }
 
     let call = if element.tag.constructor.is_some() {
         gen_widget_component_call(element)
@@ -158,6 +154,19 @@ fn gen_function_component_call(element: &Element, tag: TokenStream2) -> TokenStr
     });
     let prop_values = props.iter().map(|(_, value)| value);
     let prop_values = (!props.is_empty()).then(|| quote! { #(#prop_values),*, });
+    let bindings = element.props.iter().filter_map(|prop| match prop {
+        Prop::Bind { name, value } => {
+            let name = match name {
+                Some(name) => {
+                    let name = crate::component_prop_name(name);
+                    quote! { Some(#name) }
+                }
+                None => quote! { None },
+            };
+            Some(quote! { (#name, Box::new(#value) as Box<dyn ::core::any::Any>) })
+        }
+        _ => None,
+    });
 
     quote! {{
         #(#prop_checks)*
@@ -165,7 +174,8 @@ fn gen_function_component_call(element: &Element, tag: TokenStream2) -> TokenStr
             #tag::__reactatui_render(
                 #positional
                 #prop_values
-                ::reactatui::Slot::new(#slots)
+                ::reactatui::Slot::new(#slots),
+                ::reactatui::Bindings::new(vec![#(#bindings),*])
             )
         )
     }}

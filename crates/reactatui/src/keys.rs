@@ -134,25 +134,21 @@ impl ParsedKeySpec {
 /// Declarative keybinding registration:
 ///
 /// ```ignore
-/// keybindings!(keys, {
+/// keybindings! {
 ///     "tab" => move || Pane::next(),
 ///     "shift+tab" | "backtab" => move || Pane::prev(),
 ///     "esc" => move || app.close(),
 ///     "q" => move || app.quit(),
 ///     "shift+q" => move || app.force_quit(),
 ///     "ctrl+c" => move || app.quit(),
-/// });
+/// }
 /// ```
 ///
 /// Each arm's handler is a zero-arg `FnMut()`, matching `KeyHandle::on`'s
-/// convention — if you need the raw `KeyEvent`, use `keys.on_any`/`on_when`
-/// directly instead.
+/// convention. If you need the raw `KeyEvent`, use `keys().on_any(...)` or
+/// `keys().on_when(...)` directly instead.
 #[macro_export]
 macro_rules! keybindings {
-    ($keys:expr, { $($arms:tt)* }) => {
-        $crate::keybindings!(@arm $keys, $($arms)*);
-    };
-
     (@arm $keys:expr $(,)?) => {};
 
     // Guarded catch-all:
@@ -216,5 +212,12 @@ macro_rules! keybindings {
             }
         }
         $crate::keybindings!(@arm $keys, $($($rest)*)?);
+    };
+
+    ($($arms:tt)*) => {
+        {
+            let __reactatui_keys = $crate::hooks::keys();
+            $crate::keybindings!(@arm __reactatui_keys, $($arms)*);
+        }
     };
 }

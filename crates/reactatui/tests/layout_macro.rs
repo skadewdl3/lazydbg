@@ -6,7 +6,7 @@ use ratatui::{
 };
 use reactatui::layout::Size;
 use reactatui::layout::style::Justify;
-use reactatui::prelude::{Action, Callback, Runtime};
+use reactatui::prelude::{Action, Callback, Runtime, State, bind, state};
 use reactatui::{Flex, Grid, layout, tui};
 use reactatui::{TuiNode, component};
 
@@ -44,6 +44,63 @@ fn TypedEvents(#[prop] on_activate: Action, #[prop] on_value: Callback<u32>) -> 
 #[component]
 fn KeyedItem() -> TuiNode<'static> {
     TuiNode::empty()
+}
+
+#[component]
+fn NamedBoundChild(#[bind] value: State<i32>) -> TuiNode<'static> {
+    bind(value).set(42);
+    TuiNode::empty()
+}
+
+#[component]
+fn DefaultBoundChild(#[bind(default)] value: State<i32>) -> TuiNode<'static> {
+    bind(value).set(24);
+    TuiNode::empty()
+}
+
+#[component]
+fn OptionalBoundChild(#[bind] value: Option<State<i32>>) -> TuiNode<'static> {
+    if let Some(value) = value {
+        bind(value).set(7);
+    }
+    TuiNode::empty()
+}
+
+#[component]
+fn NamedBoundParent(
+    capture: std::rc::Rc<std::cell::RefCell<Option<State<i32>>>>,
+) -> TuiNode<'static> {
+    let value = state(|| 0);
+    *capture.borrow_mut() = Some(value.clone());
+    tui! { <NamedBoundChild bind:value={value} /> }
+}
+
+#[component]
+fn DefaultBoundParent(
+    capture: std::rc::Rc<std::cell::RefCell<Option<State<i32>>>>,
+) -> TuiNode<'static> {
+    let value = state(|| 0);
+    *capture.borrow_mut() = Some(value.clone());
+    tui! { <DefaultBoundChild bind={value} /> }
+}
+
+#[component]
+fn OptionalBoundParent(
+    capture: std::rc::Rc<std::cell::RefCell<Option<State<i32>>>>,
+) -> TuiNode<'static> {
+    let value = state(|| 0);
+    *capture.borrow_mut() = Some(value.clone());
+    tui! { <OptionalBoundChild bind:value={value} /> }
+}
+
+#[component]
+fn OptionalUnboundParent() -> TuiNode<'static> {
+    tui! { <OptionalBoundChild /> }
+}
+
+#[component]
+fn RequiredUnboundParent() -> TuiNode<'static> {
+    tui! { <NamedBoundChild /> }
 }
 
 #[test]
@@ -204,6 +261,21 @@ fn component_props_bind_by_name_after_constructor_arguments() {
 }
 
 #[test]
+fn component_props_support_same_name_shorthand() {
+    let first = "1";
+    let second = "2";
+    let node = tui! {
+        <PropsWithConstructor("value:") {second} {first} />
+    };
+
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 12, 1));
+    node.render(Rect::new(0, 0, 12, 1), &mut buffer);
+    assert_eq!(buffer[(0, 0)].symbol(), "v");
+    assert_eq!(buffer[(6, 0)].symbol(), "1");
+    assert_eq!(buffer[(7, 0)].symbol(), "2");
+}
+
+#[test]
 fn a_slot_groups_multiple_nodes_into_one_prop() {
     let node = tui! {
         <DefaultSlot>
@@ -249,6 +321,63 @@ fn custom_events_are_typed_props_with_familiar_syntax() {
 
     assert_eq!(activations.get(), 1);
     assert_eq!(value.get(), 42);
+}
+
+#[test]
+fn named_bindings_share_parent_state() {
+    use std::{cell::RefCell, rc::Rc};
+
+    let capture = Rc::new(RefCell::new(None));
+    let runtime = Runtime::new();
+    let area = Rect::new(0, 0, 1, 1);
+    let mut buffer = Buffer::empty(area);
+    runtime.render_to_buffer(&mut buffer, area, || {
+        tui! { <NamedBoundParent(capture.clone()) /> }
+    });
+
+    assert_eq!(capture.borrow().as_ref().expect("parent state").get(), 42);
+}
+
+#[test]
+fn default_bindings_use_the_unnamed_bind_attribute() {
+    use std::{cell::RefCell, rc::Rc};
+
+    let capture = Rc::new(RefCell::new(None));
+    let runtime = Runtime::new();
+    let area = Rect::new(0, 0, 1, 1);
+    let mut buffer = Buffer::empty(area);
+    runtime.render_to_buffer(&mut buffer, area, || {
+        tui! { <DefaultBoundParent(capture.clone()) /> }
+    });
+
+    assert_eq!(capture.borrow().as_ref().expect("parent state").get(), 24);
+}
+
+#[test]
+fn optional_bindings_may_be_omitted_or_supplied() {
+    use std::{cell::RefCell, rc::Rc};
+
+    let runtime = Runtime::new();
+    let area = Rect::new(0, 0, 1, 1);
+    let mut buffer = Buffer::empty(area);
+    runtime.render_to_buffer(&mut buffer, area, || {
+        tui! { <OptionalUnboundParent /> }
+    });
+
+    let capture = Rc::new(RefCell::new(None));
+    runtime.render_to_buffer(&mut buffer, area, || {
+        tui! { <OptionalBoundParent(capture.clone()) /> }
+    });
+    assert_eq!(capture.borrow().as_ref().expect("parent state").get(), 7);
+}
+
+#[test]
+#[should_panic(expected = "required binding `value` was not provided")]
+fn required_bindings_must_be_supplied() {
+    let runtime = Runtime::new();
+    let area = Rect::new(0, 0, 1, 1);
+    let mut buffer = Buffer::empty(area);
+    runtime.render_to_buffer(&mut buffer, area, || tui! { <RequiredUnboundParent /> });
 }
 
 #[test]

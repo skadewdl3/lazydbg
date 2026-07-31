@@ -26,7 +26,7 @@ struct Args {
     lldb: bool,
 }
 
-fn init<'a>(runtime: &Runtime, args: Args) -> Result<(), &'a str> {
+fn init<'a>(runtime: &Runtime, args: Args) -> Result<AppState, &'a str> {
     // Initialize a debug backend based on if the user passes
     // Initialize logging
 
@@ -45,39 +45,43 @@ fn init<'a>(runtime: &Runtime, args: Args) -> Result<(), &'a str> {
         }
     };
 
-    // Install the application services and state in this runtime.
-    runtime.insert_resource(AppState::new(runtime, DbgSession::new(backend), logs));
-
-    Ok(())
+    Ok(AppState::new(runtime, DbgSession::new(backend), logs))
 }
 
 fn main() -> io::Result<()> {
     let args = Args::parse();
     let runtime = Runtime::new();
 
-    match init(&runtime, args) {
-        Ok(_) => (),
+    let app_state = match init(&runtime, args) {
+        Ok(app_state) => app_state,
         Err(err) => {
             println!("Error: {}", err);
             return Ok(());
         }
-    }
+    };
 
     // Start the ratatui app
     let mut terminal = ratatui::try_init()?;
     // Enable mouse events
     execute!(std::io::stderr(), EnableMouseCapture)?;
-    let result = run(&mut terminal, runtime);
+    let result = run(&mut terminal, runtime, app_state);
     execute!(std::io::stderr(), DisableMouseCapture)?;
     ratatui::restore();
     result
 }
 
-fn run(terminal: &mut ratatui::DefaultTerminal, runtime: Runtime) -> io::Result<()> {
+fn run(
+    terminal: &mut ratatui::DefaultTerminal,
+    runtime: Runtime,
+    app_state: AppState,
+) -> io::Result<()> {
+    let should_quit = app_state.should_quit.clone();
+    let mut initial_app_state = Some(app_state);
     loop {
         if runtime.needs_render() {
             terminal.draw(|frame| {
-                runtime.render(frame, frame.area(), Home);
+                let app_state = initial_app_state.take();
+                runtime.render(frame, frame.area(), || Home(app_state));
             })?;
         }
 
@@ -92,12 +96,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal, runtime: Runtime) -> io::Result<
             }
         }
 
-        if runtime
-            .resource::<AppState>()
-            .expect("AppState resource is installed")
-            .should_quit
-            .get()
-        {
+        if should_quit.get() {
             break;
         }
     }

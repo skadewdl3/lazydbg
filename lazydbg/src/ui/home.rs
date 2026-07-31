@@ -6,7 +6,7 @@ use reactatui::keybindings;
 use reactatui::prelude::*;
 use reactatui_widgets::{Dialog, Input};
 
-use crate::app_state::AppState;
+use crate::app_state::{APP_STATE_KEY, AppState};
 
 #[derive(Copy, Clone)]
 enum InputUse {
@@ -18,63 +18,61 @@ enum InputUse {
 /// The root UI component containing a title bar and the main multi-pane panel.
 /// Owns application-wide key bindings and pane composition.
 #[component]
-pub fn Home<'a>() -> TuiNode<'a> {
-    let app = resource::<AppState>();
+pub fn Home<'a>(initial_app_state: Option<AppState>) -> TuiNode<'a> {
+    let app = resource_or(APP_STATE_KEY, || {
+        initial_app_state.expect("AppState must be supplied on the first render")
+    });
     let session = app.session.clone();
-    let keys = use_key();
     let open = state(|| false);
     let input_use = state(|| InputUse::None);
+    let input_placeholder = memo(|| match input_use.get() {
+        InputUse::Binary => "Enter binary path",
+        InputUse::Breakpoint => "Enter breakpoint symbol",
+        _ => "",
+    });
+    let text = state(String::new);
 
-    let binary_open = open.clone();
-    let binary_use = input_use.clone();
-    let breakpoint_open = open.clone();
-    let breakpoint_use = input_use.clone();
-    let escape_open = open.clone();
-    let stop_session = session.clone();
-    let list_session = session.clone();
-    let run_session = session.clone();
-    let frames_session = session.clone();
     let frames = app.frames.clone();
 
-    keybindings!(keys, {
-       "q" => move || resource::<AppState>().should_quit.set(true),
+    keybindings! {
+       "q" => move || resource::<AppState>(APP_STATE_KEY).should_quit.set(true),
        "tab" => move || Pane::next(),
        "shift+tab" | "backtab" => move || Pane::prev(),
-       "s" => move || stop_session.with_mut(|s| s.stop()),
-       "o" => move || { binary_use.set(InputUse::Binary); binary_open.set(true); },
-       "b" => move || { breakpoint_use.set(InputUse::Breakpoint); breakpoint_open.set(true); },
-       "esc" => move || escape_open.set(false),
-       "l" => move || list_session.with_mut(|s| s.list_breakpoints()),
-       "r" => move || run_session.with_mut(|s| s.run()),
-       "t" => move || frames.set(frames_session.with_mut(|s| s.frames())),
-    });
+       "s" => lambda!(+session, || session.with_mut(|s| s.stop())),
+       "o" => lambda!(+input_use, +open, || {
+           input_use.set(InputUse::Binary);
+           open.set(true);
+       }),
+       "b" => lambda!(+input_use, +open, || {
+           input_use.set(InputUse::Breakpoint);
+           open.set(true);
+       }),
+       "l" => lambda!(+session, || session.with_mut(|s| s.list_breakpoints())),
+       "r" => lambda!(+session, || session.with_mut(|s| s.run())),
+       "t" => lambda!(+session, +frames, || {
+           frames.set(session.with_mut(|s| s.frames()));
+       }),
+    }
 
-    let submit_open = open.clone();
-    let submit_use = input_use.clone();
-    let submit_session = session.clone();
-    let submit_handler = move |string: Option<String>| {
-        submit_open.set(false);
+    let submit_handler = lambda!(+open, +input_use, +session, |string: Option<String>| {
+        open.set(false);
         let Some(string) = string else {
             return;
         };
-        match submit_use.get() {
+        match input_use.get() {
             InputUse::Binary => {
-                submit_session.with_mut(|s| {
+                session.with_mut(|s| {
                     s.open_file(string.clone());
                 });
             }
             InputUse::Breakpoint => {
-                submit_session.with_mut(|s| {
+                session.with_mut(|s| {
                     s.set_breakpoint(string.clone());
                 });
             }
             _ => {}
         }
-    };
-
-    let input = tui! {
-        <Input("Enter binary", open.get(), true) on:submit={submit_handler} />
-    };
+    });
 
     tui! {
         <Flex::horizontal>
@@ -89,8 +87,8 @@ pub fn Home<'a>() -> TuiNode<'a> {
                 <Logs is_active={false} />
             </Flex>
             <Keybinds layout={layout!{size: 1}} />
-            <Dialog visible={open.get()} width="50%" layout={layout!{ignore: true}}>
-                <{input} />
+            <Dialog bind:visible={open} width="50%" layout={layout!{ignore: true}}>
+                <Input(*input_placeholder, open.get(), true) bind:value={text} on:submit={submit_handler} />
             </Dialog>
         </Flex>
     }

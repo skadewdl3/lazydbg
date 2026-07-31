@@ -2,11 +2,11 @@ use ratatui::widgets::Paragraph;
 use reactatui::{TuiNode, component, hooks::resource, style, tui};
 use reactatui_widgets::Block;
 
-use crate::app_state::AppState;
+use crate::app_state::{APP_STATE_KEY, AppState};
 
 #[component]
 pub fn Status<'a>() -> TuiNode<'a> {
-    let session = resource::<AppState>().session.clone();
+    let session = resource::<AppState>(APP_STATE_KEY).session.clone();
     let is_alive = session.with_mut_untracked(|s| s.is_alive());
     let block_style = style! { borders: all; };
 

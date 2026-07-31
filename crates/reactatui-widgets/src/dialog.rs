@@ -6,6 +6,8 @@ use ratatui::{
 };
 use reactatui::{
     TuiNode, component,
+    hooks::{State, bind},
+    keybindings, lambda,
     measure::{Measured, blit_measured, measure_node},
     style, tui,
 };
@@ -166,12 +168,17 @@ impl<'a> Widget for DialogWidget<'a> {
 /// Centers a dialog and projects its default slot into the dialog body.
 #[component]
 pub fn Dialog<'a>(
-    #[prop] visible: bool,
+    #[bind] visible: State<bool>,
     #[prop] width: impl Into<DialogDimension>,
     #[slot(default)] dialog_content: TuiNode<'a>,
 ) -> TuiNode<'a> {
+    let open = bind(visible);
+    keybindings! {
+        "esc" => lambda!(+open, || open.set(false)),
+    }
+
     tui! {
-        <DialogWidget::new visible={visible} width={width}>
+        <DialogWidget::new visible={open.get()} width={width}>
             <{dialog_content} />
         </DialogWidget::new>
     }

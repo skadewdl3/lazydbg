@@ -182,46 +182,64 @@ pub fn Input<'a>(
     placeholder: &'a str,
     focused: bool,
     show_cursor: bool,
+    #[bind] value: State<String>,
     #[prop] on_submit: Callback<Option<String>>,
 ) -> TuiNode<'a> {
-    let state = state(InputState::default);
-    use_focus(focused);
+    let value = bind(value);
+    let cursor = state(|| 0usize);
+    focus(focused);
 
     if focused {
-        let keys = use_key();
         let enter_submit = on_submit.clone();
         let escape_submit = on_submit.clone();
-        let submit_state = state.clone();
-        let escape_state = state.clone();
-        let edit_state = state.clone();
+        let submit_value = value.clone();
+        let submit_cursor = cursor.clone();
+        let escape_value = value.clone();
+        let escape_cursor = cursor.clone();
+        let edit_value = value.clone();
+        let edit_cursor = cursor.clone();
 
-        keybindings!(keys, {
+        keybindings! {
             "enter" => move || {
-                let val = submit_state.with_mut(|s| {
-                    let temp = s.value.clone();
-                    s.value.clear();
-                    temp
-              });
+                let val = submit_value.get();
+                submit_value.set(String::new());
+                submit_cursor.set(0);
                 enter_submit.call(Some(val));
             },
             "esc" => move || {
-                escape_state.with_mut(|s| s.value.clear());
+                escape_value.set(String::new());
+                escape_cursor.set(0);
                 escape_submit.call(None);
             },
             key(k) if !matches!(k.code, KeyCode::Tab | KeyCode::BackTab) => move |event| {
-                edit_state.with_mut(|s| s.handle_key(event));
+                let cursor = edit_cursor.get();
+                let next_cursor = edit_value.with_mut(|value| {
+                    let cursor = cursor.min(value.chars().count());
+                    let mut state = InputState {
+                        value: value.clone(),
+                        cursor,
+                    };
+                    state.handle_key(event);
+                    *value = state.value;
+                    state.cursor
+                });
+                edit_cursor.set(next_cursor);
                 Propagation::Stop
             }
-        });
+        }
     }
 
-    let text = state.with(|s| {
-        if s.value.is_empty() {
+    let text = value.with(|value| {
+        let state = InputState {
+            value: value.clone(),
+            cursor: cursor.get().min(value.chars().count()),
+        };
+        if state.value.is_empty() {
             placeholder.to_string()
         } else if focused && show_cursor {
-            s.value_with_cursor()
+            state.value_with_cursor()
         } else {
-            s.value.clone()
+            state.value
         }
     });
 
