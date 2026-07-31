@@ -1,11 +1,8 @@
-use ratatui::{
-    style::Modifier,
-    widgets::{Borders, Paragraph},
-};
+use ratatui::widgets::{Borders, Paragraph};
 use reactatui::{
     TuiNode, component,
     hooks::{resource, state, use_key},
-    keybindings, tui,
+    keybindings, layout, style, tui,
 };
 use reactatui_widgets::{Block, List};
 
@@ -22,10 +19,10 @@ pub fn FrameItem<'a>(frame: &dyn DbgFrame, #[prop] active: bool) -> TuiNode<'a> 
     let line = frame.line().unwrap_or("?".into());
     // Format the frame information
     let text = format!("#{} {} {} ({}:{})", level, addr, func, file, line);
-    let row_style = if active {
-        ratatui::style::Style::default().add_modifier(Modifier::REVERSED)
-    } else {
-        ratatui::style::Style::default()
+    let row_style = style! {
+        if active {
+            text-style: reversed;
+        }
     };
 
     TuiNode::from_widget(Paragraph::new(text).style(row_style))
@@ -65,6 +62,7 @@ pub fn Frame<'a>() -> TuiNode<'a> {
             <List virtual={false}>
                 for (index, frame) in frames.get().into_iter().enumerate() {
                     <FrameItem(frame.as_ref())
+                        layout={layout!{ size: 1 }}
                         key={index}
                         active={selected_frame.get() == index}
                     />

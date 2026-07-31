@@ -123,7 +123,7 @@ impl<'a> InputBase<'a> {
         Self {
             placeholder,
             block: None,
-            style: Style::default(),
+            style: style! {},
             focused: true,
             show_cursor: true,
         }

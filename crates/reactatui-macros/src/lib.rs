@@ -114,6 +114,34 @@ pub fn layout(input: TokenStream) -> TokenStream {
     layout::layout(input.into()).into()
 }
 
+/// Builds a `ratatui::style::Style` from CSS-like declarations.
+///
+/// Colors accept ratatui's named ANSI palette, `rgb(r, g, b)`, `#RGB`,
+/// `#RRGGBB`, `indexed(n)`, or a braced Rust `Color` expression. Supported
+/// properties are `color`, `background-color`, `text-decoration-color`,
+/// `font-weight`, `font-style`, `text-decoration-line`, `visibility`,
+/// `text-style`, `all`, and `patch`, along with the documented color aliases.
+///
+/// The macro supports the same inline and block `if` chains and top-level
+/// `match` shorthand as `layout!`.
+///
+/// ```ignore
+/// style! {
+///     color: #f80;
+///     background-color: rgb(20, 24, 31);
+///     font-weight: bold;
+///     text-style: dim underline not-reversed;
+///
+///     if focused {
+///         color: yellow;
+///     }
+/// }
+/// ```
+#[proc_macro]
+pub fn style(input: TokenStream) -> TokenStream {
+    style::style(input.into()).into()
+}
+
 /// A react-esque functional component that tracks state automatically.
 /// It injects a guard at the top of the function to push the component's unique
 /// context to the hook runtime stack.

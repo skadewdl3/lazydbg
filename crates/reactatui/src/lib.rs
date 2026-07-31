@@ -7,7 +7,7 @@ pub mod node;
 pub mod style;
 pub mod view;
 
-pub use reactatui_macros::{children, component, key_pattern as __key_pattern, layout, tui};
+pub use reactatui_macros::{children, component, key_pattern as __key_pattern, layout, style, tui};
 
 pub use ext::FrameExt;
 pub use layout::{FlexItemNode, FlexNode, GridItemNode, GridNode, Padding};

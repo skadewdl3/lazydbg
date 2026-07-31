@@ -1,7 +1,6 @@
 // crates/reactatui-widgets/src/button.rs
 use ratatui::{
     layout::Alignment,
-    style::{Modifier, Style},
     widgets::{Borders, Paragraph},
 };
 use reactatui::{keybindings, prelude::*};
@@ -16,7 +15,7 @@ use crate::Block;
 /// ```ignore
 /// <Button
 ///     label={"Save"}
-///     style={style!{ color: cyan; bold; }}
+///     style={style!{ color: cyan; text-style: bold; }}
 ///     borders={Borders::ALL}
 ///     disabled={false}
 ///     focused={true}
@@ -43,12 +42,12 @@ pub fn Button<'a>(
         });
     }
 
-    let appearance = if disabled {
-        Style::default().add_modifier(Modifier::DIM)
-    } else if hovered.get() || focused {
-        Style::default().add_modifier(Modifier::REVERSED)
-    } else {
-        Style::default()
+    let appearance = style! {
+        if disabled {
+            text-style: dim;
+        } else if hovered.get() || focused {
+            text-style: reversed;
+        }
     };
     let button = TuiNode::from_widget(
         Block::default()

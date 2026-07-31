@@ -1,4 +1,4 @@
-//! Support type for the `style!` macro: a single value carrying both a
+//! Compatibility type carrying both a
 //! `ratatui::style::Style` (colors/modifiers) and a `reactatui::layout::Style`
 //! (flex/grid alignment) side by side.
 //!
@@ -7,7 +7,7 @@
 //! `Into` resolves the matching half automatically as long as that method
 //! accepts `impl Into<T>` rather than a concrete `T`.
 
-/// Produced by the `style!` macro. See the module docs.
+/// Legacy combined style value. The `style!` macro returns ratatui's `Style` directly.
 #[derive(Debug, Clone, Default)]
 pub struct CombinedStyle {
     pub base: ratatui::style::Style,

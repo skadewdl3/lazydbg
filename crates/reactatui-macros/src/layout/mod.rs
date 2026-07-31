@@ -8,14 +8,23 @@ use serde::de::value::{BorrowedStrDeserializer, Error as SerdeValueError};
 use syn::parse::Parser as _;
 
 pub fn layout(input: TokenStream2) -> TokenStream2 {
-    match Parser::new(input).parse() {
+    match Parser::new(input, Target::Layout).parse() {
         Ok(styles) => styles,
         Err(error) => error.to_compile_error(),
     }
 }
 
-pub(crate) struct RuleTokens {
-    pub(crate) setter: TokenStream2,
+#[derive(Clone, Copy)]
+pub(crate) enum Target {
+    Layout,
+    Style,
+}
+
+#[derive(Debug)]
+pub(crate) enum RuleTokens {
+    Setter(TokenStream2),
+    Replace(TokenStream2),
+    Raw(TokenStream2),
 }
 
 pub(crate) trait CssValue {
@@ -96,9 +105,9 @@ macro_rules! properties {
                     $(
                         Self::$variant => {
                             let value = <$value as crate::layout::CssValue>::parse_tokens(value, $css)?;
-                            Ok(crate::layout::RuleTokens {
-                                setter: quote::quote! { $method(#value) },
-                            })
+                            Ok(crate::layout::RuleTokens::Setter(
+                                quote::quote! { $method(#value) }
+                            ))
                         }
                     ),*
                 }
@@ -112,6 +121,7 @@ pub(crate) use properties;
 struct Parser {
     tokens: Vec<TokenTree>,
     pos: usize,
+    target: Target,
 }
 
 #[derive(Clone)]
@@ -120,18 +130,26 @@ struct CssName {
 }
 
 impl Parser {
-    fn new(tokens: TokenStream2) -> Self {
+    fn new(tokens: TokenStream2, target: Target) -> Self {
         Self {
             tokens: tokens.into_iter().collect(),
             pos: 0,
+            target,
         }
     }
 
     fn parse(&mut self) -> syn::Result<TokenStream2> {
-        let style = format_ident!("__reactatui_layout_style");
+        let style = match self.target {
+            Target::Layout => format_ident!("__reactatui_layout_style"),
+            Target::Style => format_ident!("__reactatui_style"),
+        };
         let body = self.parse_style_block(&style)?;
+        let initial = match self.target {
+            Target::Layout => quote! { ::reactatui::layout::Style::default() },
+            Target::Style => quote! { ::ratatui::style::Style::new() },
+        };
         Ok(quote! {{
-            let mut #style = ::reactatui::layout::Style::default();
+            let mut #style = #initial;
             #body
             #style
         }})
@@ -170,14 +188,17 @@ impl Parser {
     fn parse_block_if(&mut self, style: &Ident) -> syn::Result<TokenStream2> {
         self.expect_keyword("if")?;
         let (condition, body) = self.collect_until_brace_group()?;
-        let then_body = Parser::new(body).parse_style_block(style)?;
+        let then_body = Parser::new(body, self.target).parse_style_block(style)?;
 
         let else_body = if self.peek_ident("else") {
             self.expect_keyword("else")?;
             if self.peek_ident("if") {
                 Some(self.parse_block_if(style)?)
             } else {
-                Some(Parser::new(self.expect_brace_group()?).parse_style_block(style)?)
+                Some(
+                    Parser::new(self.expect_brace_group()?, self.target)
+                        .parse_style_block(style)?,
+                )
             }
         } else {
             None
@@ -202,7 +223,7 @@ impl Parser {
     fn parse_block_match(&mut self, style: &Ident) -> syn::Result<TokenStream2> {
         self.expect_keyword("match")?;
         let (scrutinee, body) = self.collect_until_brace_group()?;
-        let mut inner = Parser::new(body);
+        let mut inner = Parser::new(body, self.target);
         let mut arms = Vec::new();
         let mut shorthand_property = None;
 
@@ -262,7 +283,7 @@ impl Parser {
             && group.delimiter() == Delimiter::Brace
         {
             self.pos += 1;
-            Parser::new(group.stream()).parse_style_block(style)?
+            Parser::new(group.stream(), self.target).parse_style_block(style)?
         } else if self.next_is_rule() {
             let name = self.peek_css_name()?;
             *shorthand_property = Some(name);
@@ -295,10 +316,15 @@ impl Parser {
         name: &CssName,
         value: TokenStream2,
     ) -> syn::Result<TokenStream2> {
-        let rule = property_value(name, value)?;
-        let setter = rule.setter;
-        Ok(quote! {
-            #style = #style.#setter;
+        let rule = property_value(self.target, name, value)?;
+        Ok(match rule {
+            RuleTokens::Setter(setter) => quote! {
+                #style = #style.#setter;
+            },
+            RuleTokens::Replace(value) => quote! {
+                #style = #value;
+            },
+            RuleTokens::Raw(statements) => statements,
         })
     }
 
@@ -483,19 +509,37 @@ impl CssName {
     }
 }
 
-fn property_value(name: &CssName, value: TokenStream2) -> syn::Result<RuleTokens> {
+fn property_value(target: Target, name: &CssName, value: TokenStream2) -> syn::Result<RuleTokens> {
     let property = name.as_kebab();
-    if let Some(rule) = flex::rule(&property, value.clone())? {
-        return Ok(rule);
-    }
-    if let Some(rule) = grid::rule(&property, value)? {
-        return Ok(rule);
+    match target {
+        Target::Layout => {
+            if let Some(rule) = flex::rule(&property, value.clone())? {
+                return Ok(rule);
+            }
+            if let Some(rule) = grid::rule(&property, value)? {
+                return Ok(rule);
+            }
+        }
+        Target::Style => return crate::style::property_value(&property, value),
     }
 
     Err(syn::Error::new_spanned(
         name.parts.first().expect("css names are non-empty"),
-        format!("unknown layout property `{property}`"),
+        format!("unknown {} property `{property}`", target.name()),
     ))
+}
+
+impl Target {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Layout => "layout",
+            Self::Style => "style",
+        }
+    }
+}
+
+pub(crate) fn parse_style(input: TokenStream2) -> syn::Result<TokenStream2> {
+    Parser::new(input, Target::Style).parse()
 }
 
 pub(crate) fn enum_value<T>(
@@ -543,7 +587,11 @@ fn parse_inline_if(
     mapper: impl Fn(&str) -> Option<TokenStream2> + Copy,
     invalid: impl Fn(&TokenStream2) -> syn::Error + Copy,
 ) -> syn::Result<TokenStream2> {
-    let mut parser = Parser { tokens, pos: 0 };
+    let mut parser = Parser {
+        tokens,
+        pos: 0,
+        target: Target::Layout,
+    };
     parser.expect_keyword("if")?;
     let (condition, body) = parser.collect_until_brace_group()?;
     let then_value = parse_css_value(body, mapper, invalid)?;
@@ -659,11 +707,11 @@ fn is_css_track_list(tokens: &[TokenTree]) -> bool {
 mod tests {
     use quote::quote;
 
-    use super::Parser;
+    use super::{Parser, Target};
 
     #[test]
     fn invalid_enum_value_explains_the_property_and_fix() {
-        let error = Parser::new(quote! { direction: diagonal; })
+        let error = Parser::new(quote! { direction: diagonal; }, Target::Layout)
             .parse()
             .expect_err("invalid direction should fail");
         let message = error.to_string();
@@ -675,7 +723,7 @@ mod tests {
 
     #[test]
     fn invalid_track_value_explains_the_expected_syntax() {
-        let error = Parser::new(quote! { columns: 1fr fill; })
+        let error = Parser::new(quote! { columns: 1fr fill; }, Target::Layout)
             .parse()
             .expect_err("invalid track should fail");
         let message = error.to_string();
