@@ -1244,6 +1244,28 @@ pub fn use_emit<T: 'static>(event_name: &'static str) -> Emitter<T> {
     }
 }
 
+pub struct Bind<T: 'static> {
+    current: T,
+    emitter: Emitter<T>,
+}
+
+impl<T: Clone + 'static> Bind<T> {
+    pub fn get(&self) -> T {
+        self.current.clone()
+    }
+
+    pub fn set(&self, value: T) {
+        self.emitter.emit(value);
+    }
+}
+
+pub fn use_bind<T: Clone + 'static>(current: T, event_name: &'static str) -> Bind<T> {
+    Bind {
+        current,
+        emitter: use_emit::<T>(event_name),
+    }
+}
+
 /// Registers a typed handler that receives custom events emitted by any
 /// descendant component (or the component itself) for the given event name.
 ///

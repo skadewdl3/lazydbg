@@ -47,7 +47,6 @@ pub struct Dialog<'a> {
     children: Vec<TuiNode<'a>>,
     width: Option<DialogDimension>,
     height: Option<DialogDimension>,
-    flex_ignore: bool,
     clear_background: bool,
     background_style: Option<Style>,
     visible: bool,
@@ -69,7 +68,6 @@ impl<'a> Dialog<'a> {
             children: Vec::new(),
             width: None,  // auto-fit by default
             height: None, // auto-fit by default
-            flex_ignore: false,
             clear_background: true,
             visible: true,
             background_style: None,
@@ -83,11 +81,6 @@ impl<'a> Dialog<'a> {
 
     pub fn height(mut self, height: impl Into<DialogDimension>) -> Self {
         self.height = Some(height.into());
-        self
-    }
-
-    pub fn flex_ignore(mut self, ignore: bool) -> Self {
-        self.flex_ignore = ignore;
         self
     }
 
@@ -116,18 +109,11 @@ impl<'a> Dialog<'a> {
         content: u16,
         border: u16,
         parent_len: u16,
-        flex_ignore: bool,
     ) -> u16 {
         match dim {
             None => (content + border).min(parent_len.max(border)),
             Some(DialogDimension::Percent(p)) => ((parent_len as u32 * p as u32) / 100) as u16,
-            Some(DialogDimension::Cells(c)) => {
-                if flex_ignore {
-                    c
-                } else {
-                    c.min(parent_len)
-                }
-            }
+            Some(DialogDimension::Cells(c)) => c.min(parent_len),
         }
     }
 }
@@ -143,20 +129,9 @@ impl<'a> Widget for Dialog<'a> {
 
         let measured = Self::measure_content(self.children, area);
 
-        let total_w = Self::resolve_dim(
-            self.width,
-            measured.content_width,
-            border_w,
-            area.width,
-            self.flex_ignore,
-        );
-        let total_h = Self::resolve_dim(
-            self.height,
-            measured.content_height,
-            border_h,
-            area.height,
-            self.flex_ignore,
-        );
+        let total_w = Self::resolve_dim(self.width, measured.content_width, border_w, area.width);
+        let total_h =
+            Self::resolve_dim(self.height, measured.content_height, border_h, area.height);
 
         let [horizontal] = Layout::horizontal([ratatui::layout::Constraint::Length(total_w)])
             .flex(Flex::Center)

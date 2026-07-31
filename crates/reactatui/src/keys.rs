@@ -180,9 +180,9 @@ macro_rules! keybindings {
             let __chords: Vec<Vec<$crate::keys::ParsedKeySpec>> = vec![
                 $($crate::keys::parse_chord_spec($pat).steps),+
             ];
-            
+
             let all_single = __chords.iter().all(|c| c.len() == 1);
-            
+
             if all_single {
                 $keys.on_when(
                     move |event: &::ratatui::crossterm::event::KeyEvent| {

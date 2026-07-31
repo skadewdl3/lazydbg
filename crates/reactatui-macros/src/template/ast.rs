@@ -9,6 +9,7 @@ pub enum Node {
     Expr(TokenStream2),
     If(IfNode),
     For(ForNode),
+    Match(MatchNode),
 }
 
 /// An element is either a normal ratatui widget or
@@ -22,10 +23,13 @@ pub struct Element {
     /// logically nested inside it. How the children are rendered
     /// Is up to the discretion of the element.
     pub children: Vec<Node>,
+    pub slots: Vec<(Ident, Vec<Node>)>,
 }
 
 #[derive(Clone)]
 pub struct Tag {
+    /// An opaque `TuiNode` expression used by `<{node} ... />`.
+    pub dynamic: Option<TokenStream2>,
     /// Qualified path of the identifier
     pub path: Vec<Ident>,
     /// Constructor name of the tag can be customized
@@ -52,6 +56,11 @@ pub enum Prop {
     /// An event handler for an event that can be emitted by the Element
     /// For ex, <Button on:click={move || { ... }} />
     Event { kind: String, handler: TokenStream2 },
+    /// Two-way binding sugar: bind={state} or bind:value={state}.
+    Bind {
+        name: Option<Ident>,
+        value: TokenStream2,
+    },
 }
 
 /// Syntax sugar for conditionally rendering an element
@@ -78,5 +87,18 @@ pub enum ElseBranch {
 #[derive(Clone)]
 pub struct ForNode {
     pub head: TokenStream2,
+    pub body: Vec<Node>,
+}
+
+#[derive(Clone)]
+pub struct MatchNode {
+    pub scrutinee: TokenStream2,
+    pub arms: Vec<MatchArm>,
+}
+
+#[derive(Clone)]
+pub struct MatchArm {
+    pub pattern: syn::Pat,
+    pub guard: Option<TokenStream2>,
     pub body: Vec<Node>,
 }

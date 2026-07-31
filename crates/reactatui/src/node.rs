@@ -65,6 +65,28 @@ impl<'a> TuiNode<'a> {
         Self::Empty
     }
 
+    /// Unwraps the sole root of an opaque node tree before applying props to it.
+    ///
+    /// `tui!` cannot determine the shape of an arbitrary `TuiNode` expression
+    /// at compile time, so dynamic component tags use this runtime guard.
+    pub fn into_single_top_level(self) -> Self {
+        match self {
+            Self::Fragment(mut children) if children.len() == 1 => {
+                children.pop().expect("fragment length was checked")
+            }
+            Self::Fragment(children) => panic!(
+                "dynamic component requires exactly one top-level component, but received {}",
+                children.len()
+            ),
+            Self::Empty => {
+                panic!(
+                    "dynamic component requires exactly one top-level component, but received none"
+                )
+            }
+            node => node,
+        }
+    }
+
     pub fn style(self, style: impl Into<Style>) -> Self {
         Self::Styled(Box::new(self), style.into())
     }

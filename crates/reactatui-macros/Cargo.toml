@@ -9,4 +9,5 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
+serde = { version = "1.0.228", features = ["derive"] }
 syn = { version = "3.0.0", features = ["full", "extra-traits"] }

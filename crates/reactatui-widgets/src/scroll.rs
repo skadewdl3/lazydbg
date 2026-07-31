@@ -147,7 +147,7 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
                 }
             }
         }
-        
+
         if let Some((natural_w, natural_h)) = flex_natural {
             let canvas_w = natural_w.max(area.width);
             let canvas_h = natural_h.max(area.height);
@@ -157,16 +157,22 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
             }
             let canvas = Rect::new(0, 0, canvas_w, canvas_h);
             let mut scratch = Buffer::empty(canvas);
-            
+
             let region_start = ::reactatui::hooks::mouse_region_count();
             child.render(canvas, &mut scratch);
             let region_end = ::reactatui::hooks::mouse_region_count();
-            
+
             blit_window(&scratch, canvas, clamped, area, buf);
-            
+
             let dx = area.x as i32 - (canvas.x + clamped.0) as i32;
             let dy = area.y as i32 - (canvas.y + clamped.1) as i32;
-            ::reactatui::hooks::transform_mouse_regions(region_start, region_end, dx, dy, Some(area));
+            ::reactatui::hooks::transform_mouse_regions(
+                region_start,
+                region_end,
+                dx,
+                dy,
+                Some(area),
+            );
             return;
         }
 
@@ -214,7 +220,13 @@ pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> Tu
 
         let dx = area.x as i32 - (measured.probe_area.x + clamped.0) as i32;
         let dy = area.y as i32 - (measured.probe_area.y + clamped.1) as i32;
-        ::reactatui::hooks::transform_mouse_regions(measured.region_start, measured.region_end, dx, dy, Some(area));
+        ::reactatui::hooks::transform_mouse_regions(
+            measured.region_start,
+            measured.region_end,
+            dx,
+            dy,
+            Some(area),
+        );
     }))
 }
 

@@ -1,5 +1,5 @@
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Direction, Rect};
+use ratatui::layout::Rect;
 use ratatui::widgets::{Paragraph, Widget};
 use reactatui::hooks::{register_mouse_region, use_state};
 use reactatui::layout::Size;
@@ -15,8 +15,7 @@ pub fn List<'a>(r#virtual: bool, #[children] children: Vec<TuiNode<'a>>) -> TuiN
     if r#virtual {
         render_virtualized(items)
     } else {
-        let flex = FlexNode::new(items.into_iter().map(FlexItemNode::new).collect::<Vec<_>>())
-            .direction(Direction::Vertical);
+        let flex = FlexNode::vertical(items.into_iter().map(FlexItemNode::new).collect::<Vec<_>>());
 
         // is_active=true: List is always scrollable by default.
         Scroll(false, vec![TuiNode::from(flex)])
@@ -162,7 +161,8 @@ mod tests {
 
         // Styled item short text "Short" but background green across 50 cols
         let create_item = || {
-            let p = Paragraph::new("Short").style(ratatui::style::Style::default().bg(Color::Green));
+            let p =
+                Paragraph::new("Short").style(ratatui::style::Style::default().bg(Color::Green));
             TuiNode::from_widget(p).style(reactatui::layout::Style::default().size(Size::Length(1)))
         };
 

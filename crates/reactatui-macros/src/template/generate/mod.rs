@@ -1,18 +1,17 @@
 use crate::template::{
     ast::{Element, Node},
     generate::{
-        component::{gen_component_is, gen_custom_component},
-        flex::gen_flex,
-        grid::gen_grid,
-        misc::{gen_for_fragment, gen_if},
+        component::{gen_custom_component, gen_dynamic_component},
+        container::{ContainerKind, gen_container},
+        misc::{gen_for_fragment, gen_if, gen_match},
     },
 };
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 
+mod builder;
 mod component;
-mod flex;
-mod grid;
+mod container;
 mod misc;
 mod mouse;
 
@@ -25,6 +24,7 @@ pub fn gen_node(node: &Node) -> TokenStream2 {
         }
         Node::If(node) => gen_if(node),
         Node::For(node) => gen_for_fragment(node),
+        Node::Match(node) => gen_match(node),
     }
 }
 
@@ -36,10 +36,13 @@ pub fn gen_fragment(children: &[Node]) -> TokenStream2 {
 }
 
 fn gen_element(element: &Element) -> TokenStream2 {
-    match element.tag.simple_name().as_deref() {
-        Some("Component") => gen_component_is(element),
-        Some("Flex") => gen_flex(element),
-        Some("Grid") => gen_grid(element),
+    if element.tag.dynamic.is_some() {
+        return gen_dynamic_component(element);
+    }
+
+    match element.tag.root_name().as_deref() {
+        Some("Flex") => gen_container(element, ContainerKind::Flex),
+        Some("Grid") => gen_container(element, ContainerKind::Grid),
         _ => gen_custom_component(element),
     }
 }

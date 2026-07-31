@@ -1,5 +1,5 @@
 use crate::layout::Padding;
-use crate::layout::size::{Size, parse_size_list, resolve_sizes};
+use crate::layout::size::{Size, resolve_sizes};
 use crate::layout::style::{Align, Style, align_rect, distribute};
 use crate::measure::{Measured, blit_measured, measure_node};
 use crate::node::TuiNode;
@@ -29,39 +29,7 @@ impl<'a> GridNode<'a> {
         }
     }
 
-    /// e.g. `"auto, 1fr, 20"`.
-    pub fn columns(mut self, spec: impl AsRef<str>) -> Self {
-        self.columns = parse_size_list(spec.as_ref());
-        self
-    }
-
-    /// e.g. `"3, 1fr, auto"`.
-    pub fn rows(mut self, spec: impl AsRef<str>) -> Self {
-        self.rows = parse_size_list(spec.as_ref());
-        self
-    }
-
-    pub fn gap(mut self, gap: u16) -> Self {
-        self.gap_x = gap;
-        self.gap_y = gap;
-        self
-    }
-    pub fn gap_x(mut self, gap: u16) -> Self {
-        self.gap_x = gap;
-        self
-    }
-    pub fn gap_y(mut self, gap: u16) -> Self {
-        self.gap_y = gap;
-        self
-    }
-    pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
-        self.padding = padding.into();
-        self
-    }
-
-    /// If the style specifies a non-zero `gap`, it's applied uniformly to
-    /// both `gap_x` and `gap_y` (use `.gap_x()`/`.gap_y()` directly, called
-    /// after `.style(..)`, for asymmetric gaps).
+    /// Container geometry is derived exclusively from the layout style.
     pub fn style(mut self, style: impl Into<Style>) -> Self {
         let style = style.into();
         if let Some(cols) = &style.columns {

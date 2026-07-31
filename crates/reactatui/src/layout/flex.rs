@@ -30,21 +30,13 @@ impl<'a> FlexNode<'a> {
     }
 
     pub fn horizontal(items: impl Into<Vec<FlexItemNode<'a>>>) -> Self {
-        Self::new(items).direction(Direction::Horizontal)
+        let mut flex = Self::new(items);
+        flex.direction = Direction::Horizontal;
+        flex
     }
 
     pub fn vertical(items: impl Into<Vec<FlexItemNode<'a>>>) -> Self {
-        Self::new(items).direction(Direction::Vertical)
-    }
-
-    pub fn direction(mut self, direction: Direction) -> Self {
-        self.direction = direction;
-        self
-    }
-
-    pub fn padding(mut self, padding: impl Into<Padding>) -> Self {
-        self.padding = padding.into();
-        self
+        Self::new(items)
     }
 
     /// Container-level: `justify_content` (main-axis distribution),
@@ -155,10 +147,8 @@ impl<'a> FlexItemNode<'a> {
 
     /// Item-level: `size` (main-axis sizing — `auto` measures content,
     /// `Length`/`Percent` pin it, `"Nfr"` grows to take a share of
-    /// leftover space — this is the *only* way an item grows), `shrink`
-    /// (how eagerly it gives back space below `size` on overflow — the
-    /// one property that's genuinely flex-only, since grid tracks never
-    /// shrink), and `align_self` (cross-axis override).
+    /// leftover space — this is the only way an item grows), and
+    /// `align_self` (cross-axis override).
     pub fn style(mut self, style: impl Into<Style>) -> Self {
         self.style = style.into();
         self
@@ -233,9 +223,9 @@ impl<'a> Widget for FlexNode<'a> {
 
             // Resolve each item's main-axis contribution:
             // - `Length`/`Percent` pin a concrete basis directly.
-            // - `Fr(f)` contributes zero basis but registers a grow weight —
-            //   `Fr` is the *only* way an item grows; there is no implicit
-            //   "Auto grows by default" anymore.
+            // - `Fr(f)` contributes zero basis but registers a grow weight.
+            //   `Fr` is the only way an item grows; there is no implicit
+            //   "Auto grows by default".
             // - `Auto` (or any item with non-Stretch cross-axis alignment)
             //   needs measuring before we know its basis.
             let mut premeasured: Vec<Option<Measured<'a>>> = (0..count).map(|_| None).collect();
@@ -248,10 +238,9 @@ impl<'a> Widget for FlexNode<'a> {
             // intrinsic size (e.g. bordered Blocks) always fill whatever
             // rect they're probed with — measuring them against the full
             // remaining budget makes every Auto item report a basis equal
-            // to that whole budget, forcing a shrink pass later whose
-            // blit then clips their trailing border off. Probing at a fair
-            // share instead means the measured size already matches (or
-            // is very close to) the eventual post-shrink size.
+            // to that whole budget and causes its trailing border to be
+            // clipped. Probing at a fair share keeps the measured basis
+            // close to the space the item can actually use.
             let mut known_basis_sum: u32 = 0;
             let mut auto_count: u16 = 0;
             for i in 0..count {
@@ -269,18 +258,11 @@ impl<'a> Widget for FlexNode<'a> {
                         basis[i] = n;
                         known_basis_sum += u32::from(n);
                     }
-                    Size::Fr(f) => {
-                        if styles[i].grow.is_none() {
-                            grow[i] = f as f32;
-                        }
-                    }
+                    Size::Fr(f) => grow[i] = f as f32,
                     Size::Auto => {
                         is_auto[i] = true;
                         auto_count += 1;
                     }
-                }
-                if let Some(g) = styles[i].grow {
-                    grow[i] = g;
                 }
             }
             let fair_share = (u32::from(available).saturating_sub(known_basis_sum)
@@ -341,37 +323,12 @@ impl<'a> Widget for FlexNode<'a> {
                         }
                     }
                 }
-            } else if free_space < 0 {
-                // Shrink phase: over budget, reduce proportionally to
-                // shrink * basis (CSS's actual weighting).
-                let overflow = (-free_space) as u16;
-                let total_shrink_weighted: f32 = styles
-                    .iter()
-                    .zip(basis.iter())
-                    .map(|(s, &b)| s.shrink * f32::from(b))
-                    .sum();
-                if total_shrink_weighted > 0.0 {
-                    let mut used_reduction = 0u16;
-                    for i in 0..count {
-                        let weight = styles[i].shrink * f32::from(basis[i]);
-                        let share = weight / total_shrink_weighted;
-                        let reduce = (f32::from(overflow) * share).floor() as u16;
-                        let reduce = reduce
-                            .min(basis[i])
-                            .min(overflow.saturating_sub(used_reduction));
-                        sizes[i] = basis[i].saturating_sub(reduce);
-                        used_reduction = used_reduction.saturating_add(reduce);
-                    }
-                }
-                // else: nothing can shrink — items overflow, matching
-                // CSS's behavior when shrink is 0 everywhere.
             }
 
             // Second pass: any remaining item whose cross-axis alignment
             // is not `Stretch` needs its content measured to know how to
             // position it within its slot — but only *now*, once `sizes`
-            // holds each item's real, final main-axis size (post
-            // grow/shrink). Auto items were already measured above and
+            // holds each item's real, final main-axis size. Auto items were already measured above and
             // are skipped here via the `premeasured[i].is_some()` check.
             // Probe rects always start at (0, 0).
             for i in 0..count {

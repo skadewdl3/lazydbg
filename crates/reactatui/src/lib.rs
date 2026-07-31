@@ -6,10 +6,12 @@ pub mod measure;
 pub mod node;
 pub mod style;
 
-pub use reactatui_macros::{children, component, tui};
+pub use reactatui_macros::{children, component, layout, tui};
 
 pub use ext::FrameExt;
 pub use layout::{FlexItemNode, FlexNode, GridItemNode, GridNode, Padding};
+pub type Flex<'a> = FlexNode<'a>;
+pub type Grid<'a> = GridNode<'a>;
 pub use node::{StateHandle, TuiNode};
 pub use style::CombinedStyle;
 
@@ -24,8 +26,8 @@ pub mod prelude {
     // CombinedStyle and the `style!` macro are safe to include: neither
     // name collides with anything else here.
     pub use crate::{
-        CombinedStyle, FlexItemNode, FlexNode, FrameExt, GridItemNode, GridNode, Padding,
-        StateHandle, TuiNode, children, component, style, tui,
+        CombinedStyle, Flex, FlexItemNode, FlexNode, FrameExt, Grid, GridItemNode, GridNode,
+        Padding, StateHandle, TuiNode, children, component, layout, style, tui,
     };
     pub use ratatui::{
         layout::{Alignment, Constraint, Direction, Layout, Rect},

@@ -70,11 +70,6 @@ pub struct Style {
     pub min_height: Option<u16>,
     /// Maximum height constraint.
     pub max_height: Option<u16>,
-    /// Flex grow factor.
-    pub grow: Option<f32>,
-    /// Flex shrink factor.
-    pub shrink: f32,
-
     /// Grid placement column start (0-indexed).
     pub column: Option<usize>,
     /// Grid placement row start (0-indexed).
@@ -113,8 +108,6 @@ impl Default for Style {
             max_width: None,
             min_height: None,
             max_height: None,
-            grow: None,
-            shrink: 1.0,
             column: None,
             row: None,
             column_span: 1,
@@ -133,9 +126,6 @@ impl Style {
     pub fn direction(mut self, d: impl Into<ratatui::layout::Direction>) -> Self {
         self.direction = Some(d.into());
         self
-    }
-    pub fn flex_direction(self, d: impl Into<ratatui::layout::Direction>) -> Self {
-        self.direction(d)
     }
     pub fn justify_content(mut self, j: Justify) -> Self {
         self.justify_content = j;
@@ -161,15 +151,9 @@ impl Style {
         self.gap_x = Some(gap);
         self
     }
-    pub fn column_gap(self, gap: u16) -> Self {
-        self.gap_x(gap)
-    }
     pub fn gap_y(mut self, gap: u16) -> Self {
         self.gap_y = Some(gap);
         self
-    }
-    pub fn row_gap(self, gap: u16) -> Self {
-        self.gap_y(gap)
     }
     pub fn padding(mut self, padding: impl Into<crate::layout::Padding>) -> Self {
         self.padding = Some(padding.into());
@@ -181,17 +165,11 @@ impl Style {
         self.padding = Some(p);
         self
     }
-    pub fn pad_top(self, top: u16) -> Self {
-        self.padding_top(top)
-    }
     pub fn padding_right(mut self, right: u16) -> Self {
         let mut p = self.padding.unwrap_or_default();
         p.right = right;
         self.padding = Some(p);
         self
-    }
-    pub fn pad_right(self, right: u16) -> Self {
-        self.padding_right(right)
     }
     pub fn padding_bottom(mut self, bottom: u16) -> Self {
         let mut p = self.padding.unwrap_or_default();
@@ -199,31 +177,19 @@ impl Style {
         self.padding = Some(p);
         self
     }
-    pub fn pad_bottom(self, bottom: u16) -> Self {
-        self.padding_bottom(bottom)
-    }
     pub fn padding_left(mut self, left: u16) -> Self {
         let mut p = self.padding.unwrap_or_default();
         p.left = left;
         self.padding = Some(p);
         self
     }
-    pub fn pad_left(self, left: u16) -> Self {
-        self.padding_left(left)
-    }
     pub fn columns(mut self, cols: impl crate::layout::size::IntoSizeList) -> Self {
         self.columns = Some(cols.into_size_list());
         self
     }
-    pub fn grid_template_columns(self, cols: impl crate::layout::size::IntoSizeList) -> Self {
-        self.columns(cols)
-    }
     pub fn rows(mut self, rows: impl crate::layout::size::IntoSizeList) -> Self {
         self.rows = Some(rows.into_size_list());
         self
-    }
-    pub fn grid_template_rows(self, rows: impl crate::layout::size::IntoSizeList) -> Self {
-        self.rows(rows)
     }
 
     pub fn align_self(mut self, a: Align) -> Self {
@@ -234,8 +200,8 @@ impl Style {
         self.justify_self = Some(a);
         self
     }
-    pub fn ignore(mut self) -> Self {
-        self.ignore = true;
+    pub fn ignore(mut self, ignore: bool) -> Self {
+        self.ignore = ignore;
         self
     }
     pub fn size(mut self, s: impl Into<Size>) -> Self {
@@ -266,67 +232,29 @@ impl Style {
         self.max_height = Some(h);
         self
     }
-    pub fn grow(mut self, g: f32) -> Self {
-        self.grow = Some(g.max(0.0));
-        self
-    }
-    pub fn flex_grow(self, g: f32) -> Self {
-        self.grow(g)
-    }
-    pub fn shrink(mut self, s: f32) -> Self {
-        self.shrink = s.max(0.0);
-        self
-    }
-    pub fn flex_shrink(self, s: f32) -> Self {
-        self.shrink(s)
-    }
     pub fn column(mut self, c: usize) -> Self {
         self.column = Some(c);
         self
-    }
-    pub fn column_start(self, c: usize) -> Self {
-        self.column(c)
-    }
-    pub fn grid_column_start(self, c: usize) -> Self {
-        self.column(c)
     }
     pub fn row(mut self, r: usize) -> Self {
         self.row = Some(r);
         self
     }
-    pub fn row_start(self, r: usize) -> Self {
-        self.row(r)
-    }
-    pub fn grid_row_start(self, r: usize) -> Self {
-        self.row(r)
-    }
     pub fn column_span(mut self, s: usize) -> Self {
         self.column_span = s.max(1);
         self
-    }
-    pub fn grid_column_span(self, s: usize) -> Self {
-        self.column_span(s)
     }
     pub fn row_span(mut self, s: usize) -> Self {
         self.row_span = s.max(1);
         self
     }
-    pub fn grid_row_span(self, s: usize) -> Self {
-        self.row_span(s)
-    }
     pub fn column_end(mut self, c: usize) -> Self {
         self.column_end = Some(c);
         self
     }
-    pub fn grid_column_end(self, c: usize) -> Self {
-        self.column_end(c)
-    }
     pub fn row_end(mut self, r: usize) -> Self {
         self.row_end = Some(r);
         self
-    }
-    pub fn grid_row_end(self, r: usize) -> Self {
-        self.row_end(r)
     }
 
     pub fn resolved_column_span(&self) -> usize {
@@ -401,12 +329,6 @@ impl Style {
             max_width: self.max_width.or(other.max_width),
             min_height: self.min_height.or(other.min_height),
             max_height: self.max_height.or(other.max_height),
-            grow: self.grow.or(other.grow),
-            shrink: if (self.shrink - 1.0).abs() > f32::EPSILON {
-                self.shrink
-            } else {
-                other.shrink
-            },
             column: self.column.or(other.column),
             row: self.row.or(other.row),
             column_span: if self.column_span != 1 {

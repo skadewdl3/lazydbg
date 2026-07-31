@@ -2,8 +2,11 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 
 use crate::template::{
-    ast::{Element, ElseBranch, ForNode, IfNode, Node, Prop},
-    generate::{gen_fragment, gen_node},
+    ast::{Element, ElseBranch, ForNode, IfNode, MatchNode, Node},
+    generate::{
+        builder::{BuilderProps, apply_builder_props},
+        gen_fragment, gen_node,
+    },
 };
 
 pub fn gen_if(node: &IfNode) -> TokenStream2 {
@@ -44,6 +47,21 @@ pub fn gen_for_fragment(node: &ForNode) -> TokenStream2 {
     }}
 }
 
+pub fn gen_match(node: &MatchNode) -> TokenStream2 {
+    let scrutinee = &node.scrutinee;
+    let arms = node.arms.iter().map(|arm| {
+        let pattern = &arm.pattern;
+        let guard = arm.guard.as_ref().map(|guard| quote! { if #guard });
+        let body = gen_branch(&arm.body);
+        quote! { #pattern #guard => #body, }
+    });
+    quote! {
+        match #scrutinee {
+            #(#arms)*
+        }
+    }
+}
+
 pub fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2 {
     let ty = element.tag.type_path_tokens();
     let ty_name = element.tag.type_name();
@@ -56,7 +74,7 @@ pub fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2
 
     let ctor_ident = format_ident!("{constructor}");
 
-    let mut widget = if let Some(ctor_args) = &element.tag.constructor_args {
+    let widget = if let Some(ctor_args) = &element.tag.constructor_args {
         // Explicit positional args provided via `(arg1, arg2)` syntax.
         if constructor == "default" {
             quote! { #ty::default() }
@@ -71,36 +89,23 @@ pub fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2
         }
     };
 
-    for prop in &element.props {
-        match prop {
-            Prop::Named { name, .. } if name == "state" => {}
-            Prop::Named { name, .. }
-                if omit_flex_props
-                    && matches!(name.to_string().as_str(), "flex" | "min" | "max") => {}
-            Prop::Named { name, value } => {
-                widget = quote! { #widget.#name(#value) };
-            }
-            Prop::Boolean(name) => {
-                widget = quote! { #widget.#name(true) };
-            }
-            Prop::Spread(_) => {
-                widget = quote! { compile_error!("spread props are not supported by reactatui v0.3 yet") };
-            }
-            // Event props are handled at the node level, not passed to the widget.
-            Prop::Event { .. } => {}
-        }
-    }
+    let skip = if omit_flex_props {
+        &["state", "layout", "flex", "min", "max"][..]
+    } else {
+        &["state", "layout"][..]
+    };
 
-    widget
+    apply_builder_props(
+        widget,
+        &element.props,
+        BuilderProps {
+            skip,
+            include_style: true,
+            bind_error: "bind props require #[component] metadata support",
+        },
+    )
 }
 
 pub fn default_constructor(_name: &str) -> &'static str {
     "default"
-}
-
-pub fn named_prop(props: &[Prop], expected: &str) -> Option<TokenStream2> {
-    props.iter().find_map(|prop| match prop {
-        Prop::Named { name, value } if name == expected => Some(value.clone()),
-        _ => None,
-    })
 }

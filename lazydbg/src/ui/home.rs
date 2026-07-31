@@ -64,19 +64,25 @@ pub fn Home<'a>() -> TuiNode<'a> {
         Propagation::Stop
     };
 
+    let input = tui! {
+        <Input("Enter binary", open.get(), true) on:submit={submit_handler} />
+    };
+
     tui! {
-        <Flex direction={Direction::Vertical}>
-            <Flex direction={Direction::Horizontal}>
-                <Flex direction={Direction::Vertical}>
-                    <Status />
-                    <Frame  />
-                    <Disassembly  />
+        <Flex::horizontal>
+            <Flex::horizontal>
+                <Flex::vertical>
+                    <Flex::vertical>
+                        <Status layout={layout!{size: 3 }} />
+                        <Frame   layout={layout!{size: 1fr }} />
+                        <Disassembly   layout={layout!{size: 1fr }} />
+                    </Flex>
                 </Flex>
                 <Logs is_active={false} />
             </Flex>
-            <Keybinds />
-            <Dialog::new visible={open.get()} width={"50%"}>
-                <Input("Enter binary", open.get(), true) on:submit={submit_handler} />
+            <Keybinds layout={layout!{size: 1}} />
+            <Dialog::new visible={open.get()} width={"50%"} layout={layout!{ignore: true}}>
+             <{input} />
             </Dialog>
         </Flex>
     }
