@@ -1,9 +1,9 @@
 use ratatui::widgets::Paragraph;
-use reactatui::{TuiNode, component, hooks::use_global_with, tui};
+use reactatui::{TuiNode, component, hooks::global_or, tui};
 
 #[component]
 pub fn Keybinds<'a>() -> TuiNode<'a> {
-    let active_pane_keybinds = use_global_with(
+    let active_pane_keybinds = global_or(
         "pane-keybinds",
         || "o -> select binary, r -> run, b -> set breakpoint, q -> quit",
     );

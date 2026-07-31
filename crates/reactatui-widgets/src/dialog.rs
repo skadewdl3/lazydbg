@@ -4,8 +4,11 @@ use ratatui::{
     style::Style,
     widgets::{BorderType, Borders, Clear, Padding, Widget},
 };
-use reactatui::measure::{Measured, blit_measured, measure_node};
-use reactatui::node::TuiNode;
+use reactatui::{
+    TuiNode, component,
+    measure::{Measured, blit_measured, measure_node},
+    tui,
+};
 
 use crate::Block;
 
@@ -42,7 +45,7 @@ impl From<String> for DialogDimension {
     }
 }
 
-pub struct Dialog<'a> {
+struct DialogWidget<'a> {
     block: Block<'a>,
     children: Vec<TuiNode<'a>>,
     width: Option<DialogDimension>,
@@ -52,13 +55,13 @@ pub struct Dialog<'a> {
     visible: bool,
 }
 
-impl<'a> Default for Dialog<'a> {
+impl<'a> Default for DialogWidget<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> Dialog<'a> {
+impl<'a> DialogWidget<'a> {
     pub fn new() -> Self {
         Self {
             block: Block::new()
@@ -79,6 +82,7 @@ impl<'a> Dialog<'a> {
         self
     }
 
+    #[allow(dead_code)]
     pub fn height(mut self, height: impl Into<DialogDimension>) -> Self {
         self.height = Some(height.into());
         self
@@ -118,7 +122,7 @@ impl<'a> Dialog<'a> {
     }
 }
 
-impl<'a> Widget for Dialog<'a> {
+impl<'a> Widget for DialogWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if !self.visible {
             return;
@@ -151,5 +155,19 @@ impl<'a> Widget for Dialog<'a> {
         self.block.into_inner().render(popup_area, buf);
 
         blit_measured(&measured, inner_area, buf);
+    }
+}
+
+/// Centers a dialog and projects its default slot into the dialog body.
+#[component]
+pub fn Dialog<'a>(
+    #[prop] visible: bool,
+    #[prop] width: impl Into<DialogDimension>,
+    #[slot(default)] dialog_content: TuiNode<'a>,
+) -> TuiNode<'a> {
+    tui! {
+        <DialogWidget::new visible={visible} width={width}>
+            <{dialog_content} />
+        </DialogWidget::new>
     }
 }

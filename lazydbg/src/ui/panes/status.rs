@@ -1,12 +1,12 @@
 use ratatui::widgets::{Borders, Paragraph};
-use reactatui::{TuiNode, component, hooks::use_global, tui};
+use reactatui::{TuiNode, component, hooks::global, tui};
 use reactatui_widgets::Block;
 
 use crate::interface::DbgSession;
 
 #[component]
 pub fn Status<'a>() -> TuiNode<'a> {
-    let session = use_global::<DbgSession>("dbg-session");
+    let session = global::<DbgSession>("dbg-session");
     let is_alive = session.with_mut(|s| s.is_alive());
 
     tui! {

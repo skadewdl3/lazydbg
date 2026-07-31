@@ -29,7 +29,7 @@ fn init<'a>(args: Args) -> Result<(), &'a str> {
     // Initialize logging
 
     let logs = init_logging();
-    use_global_with("logs", || logs.clone());
+    global_or("logs", || logs.clone());
 
     // --gdb or --lldb. Default is --gdb.
     let backend: Box<dyn DbgBackend> = {
@@ -45,7 +45,7 @@ fn init<'a>(args: Args) -> Result<(), &'a str> {
     };
 
     // Store the debug session in the global state
-    use_global_with("dbg-session", || DbgSession::new(backend));
+    global_or("dbg-session", || DbgSession::new(backend));
 
     Ok(())
 }
@@ -98,7 +98,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
             }
         }
 
-        if use_global_or_default("should-quit").get() {
+        if global_or("should-quit", Default::default).get() {
             break;
         }
     }

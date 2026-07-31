@@ -1,5 +1,5 @@
 use num_enum::TryFromPrimitive;
-use reactatui::hooks::{State, use_global_with};
+use reactatui::hooks::{State, global_or};
 use strum::EnumCount;
 
 pub mod disassembly;
@@ -17,7 +17,7 @@ pub enum Pane {
 
 impl Pane {
     fn state() -> State<Pane> {
-        use_global_with("active-pane", || Pane::Frame)
+        global_or("active-pane", || Pane::Frame)
     }
 
     pub fn is_active(&self) -> bool {

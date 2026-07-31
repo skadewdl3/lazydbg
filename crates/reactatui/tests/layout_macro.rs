@@ -1,8 +1,37 @@
 use ratatui::layout::Direction;
-use ratatui::widgets::Paragraph;
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    widgets::{Paragraph, Widget},
+};
 use reactatui::layout::Size;
 use reactatui::layout::style::Justify;
 use reactatui::{Flex, Grid, layout, tui};
+use reactatui::{TuiNode, component};
+
+#[component]
+fn DefaultSlot<'a>(#[slot(default)] content: Option<TuiNode<'a>>) -> TuiNode<'a> {
+    tui! { <{content} /> }
+}
+
+#[component]
+fn NamedSlot<'a>(#[slot] heading: Option<TuiNode<'a>>) -> TuiNode<'a> {
+    tui! { <{heading} /> }
+}
+
+#[component]
+fn RequiredSlot<'a>(#[slot] heading: TuiNode<'a>) -> TuiNode<'a> {
+    tui! { <{heading} /> }
+}
+
+#[component]
+fn PropsWithConstructor<'a>(
+    prefix: &'a str,
+    #[prop] second: &'a str,
+    #[prop] first: &'a str,
+) -> TuiNode<'a> {
+    tui! { <Paragraph::new(format!("{prefix}{first}{second}")) /> }
+}
 
 #[test]
 fn parses_css_like_layout_rules() {
@@ -123,4 +152,68 @@ fn dynamic_nodes_reject_multiple_top_level_components() {
     };
 
     let _ = tui! { <{multiple} layout={layout! { size: 3; }} /> };
+}
+
+#[test]
+fn components_project_default_and_named_slots() {
+    let default = tui! {
+        <DefaultSlot>
+            <Paragraph::new("default") />
+        </DefaultSlot>
+    };
+    let named = tui! {
+        <NamedSlot>
+            <Paragraph::new("heading") slot={"heading"} />
+            <Paragraph::new("ignored") />
+        </NamedSlot>
+    };
+
+    let mut default_buffer = Buffer::empty(Rect::new(0, 0, 12, 1));
+    default.render(Rect::new(0, 0, 12, 1), &mut default_buffer);
+    assert_eq!(default_buffer[(0, 0)].symbol(), "d");
+
+    let mut named_buffer = Buffer::empty(Rect::new(0, 0, 12, 1));
+    named.render(Rect::new(0, 0, 12, 1), &mut named_buffer);
+    assert_eq!(named_buffer[(0, 0)].symbol(), "h");
+}
+
+#[test]
+fn component_props_bind_by_name_after_constructor_arguments() {
+    let node = tui! {
+        <PropsWithConstructor("value:") second="2" first="1" />
+    };
+
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 12, 1));
+    node.render(Rect::new(0, 0, 12, 1), &mut buffer);
+    assert_eq!(buffer[(0, 0)].symbol(), "v");
+    assert_eq!(buffer[(6, 0)].symbol(), "1");
+    assert_eq!(buffer[(7, 0)].symbol(), "2");
+}
+
+#[test]
+fn a_slot_groups_multiple_nodes_into_one_prop() {
+    let node = tui! {
+        <DefaultSlot>
+            <Paragraph::new("first") />
+            <Paragraph::new("second") />
+        </DefaultSlot>
+    };
+
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 12, 1));
+    node.render(Rect::new(0, 0, 12, 1), &mut buffer);
+    assert_eq!(buffer[(0, 0)].symbol(), "s");
+}
+
+#[test]
+fn optional_slots_may_be_omitted() {
+    let node = tui! { <NamedSlot /> };
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 12, 1));
+    node.render(Rect::new(0, 0, 12, 1), &mut buffer);
+    assert_eq!(buffer[(0, 0)].symbol(), " ");
+}
+
+#[test]
+#[should_panic(expected = "required slot `heading` was not provided")]
+fn required_slots_must_be_supplied() {
+    let _ = tui! { <RequiredSlot /> };
 }

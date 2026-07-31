@@ -81,8 +81,8 @@ impl<'a> Widget for ScrollView<'a> {
 /// scroll past the end of the content.
 #[component]
 pub fn Scroll<'a>(is_active: bool, #[children] children: Vec<TuiNode<'a>>) -> TuiNode<'a> {
-    let offset = use_state::<(u16, u16)>(|| (0, 0));
-    let probe_size = use_state::<(u16, u16)>(|| (0, 0)); // fallback-path cache only
+    let offset = state::<(u16, u16)>(|| (0, 0));
+    let probe_size = state::<(u16, u16)>(|| (0, 0)); // fallback-path cache only
 
     if is_active {
         let keys = use_key();

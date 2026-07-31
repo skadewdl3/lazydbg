@@ -42,7 +42,7 @@ pub enum Propagation {
 }
 
 struct EventListener {
-    /// The component that called `use_on`.
+    /// The component that called `listen`.
     component_id: u64,
     /// Position of `component_id` inside the emitter's ancestry path
     /// (filled in at dispatch time for ordering).
@@ -84,7 +84,7 @@ struct HookRuntime {
     /// Maps a component ID to its ancestry path (the id_stack at the time of entry).
     component_paths: HashMap<u64, Rc<Vec<u64>>>,
     /// Bumped every time a `State` is mutated via `set`/`with_mut`.
-    /// Read by `use_memo` to decide whether to recompute.
+    /// Read by `memo` to decide whether to recompute.
     versions: HashMap<StateKey, u64>,
     chord_bindings: Vec<ChordBinding>,
     chord_pending: Vec<KeyEvent>,
@@ -99,7 +99,7 @@ thread_local! {
 }
 
 /// Call once per frame, before building the component tree, to reset
-/// per-frame bookkeeping. `use_state` values are untouched — they
+/// per-frame bookkeeping. `state` values are untouched — they
 /// persist for the lifetime of the process (or until you drop the app).
 pub fn begin_frame() {
     RUNTIME.with(|rt| {
@@ -777,14 +777,14 @@ impl<T: 'static> State<T> {
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let cell = self.get_cell();
         let borrow = cell.borrow();
-        f(borrow.downcast_ref::<T>().expect("use_state type mismatch"))
+        f(borrow.downcast_ref::<T>().expect("state type mismatch"))
     }
 
     pub fn with_mut<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
         let cell = self.get_cell();
         let result = {
             let mut borrow = cell.borrow_mut();
-            f(borrow.downcast_mut::<T>().expect("use_state type mismatch"))
+            f(borrow.downcast_mut::<T>().expect("state type mismatch"))
         };
         RUNTIME.with(|rt| {
             *rt.borrow_mut().versions.entry(self.key).or_insert(0) += 1;
@@ -810,13 +810,13 @@ impl<T: 'static + Clone> State<T> {
 /// Persistent state scoped to *this component's position in the tree*.
 /// Must be called unconditionally, in the same order, every render —
 /// same rule as React hooks.
-pub fn use_state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
+pub fn state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
         let component_id = *rt
             .id_stack
             .last()
-            .expect("use_state() called outside of a #[component] function");
+            .expect("state() called outside of a #[component] function");
         let index = {
             let counter = rt
                 .hook_indices
@@ -837,17 +837,17 @@ pub fn use_state<T: 'static>(init: impl FnOnce() -> T) -> State<T> {
 }
 
 /// Access global state that you expect to already exist (initialized by
-/// some other `use_global_with`/`use_global_or_default` call earlier in
+/// some other `global_or` call earlier in
 /// the frame, or in a previous frame). Panics if it hasn't been created yet.
 ///
 /// Use this when you're a "consumer" component that doesn't own the
 /// state's lifecycle — e.g. reading a theme that's set up once at the root.
-pub fn use_global<T: 'static>(key: &'static str) -> State<T> {
+pub fn global<T: 'static>(key: &'static str) -> State<T> {
     RUNTIME.with(|rt| {
         assert!(
             rt.borrow().keyed_states.contains_key(key),
-            "use_global::<{}>(\"{}\") read before it was initialized — \
-             call use_global_with/use_global_or_default somewhere first",
+            "global::<{}>(\"{}\") read before it was initialized — \
+             call global_or somewhere first",
             std::any::type_name::<T>(),
             key
         );
@@ -861,7 +861,7 @@ pub fn use_global<T: 'static>(key: &'static str) -> State<T> {
 /// Access global state, constructing it with `init` on first access.
 /// Accepts closures (`|| MyStruct { .. }`) and fn items (`MyStruct::new`)
 /// equally well since both satisfy `FnOnce() -> T`.
-pub fn use_global_with<T: 'static>(key: &'static str, init: impl FnOnce() -> T) -> State<T> {
+pub fn global_or<T: 'static>(key: &'static str, init: impl FnOnce() -> T) -> State<T> {
     RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
         rt.keyed_states
@@ -872,12 +872,6 @@ pub fn use_global_with<T: 'static>(key: &'static str, init: impl FnOnce() -> T) 
         key: StateKey::Keyed(key),
         _marker: std::marker::PhantomData,
     }
-}
-
-/// Access global state, falling back to `T::default()` on first access.
-/// Sugar for `use_global_with(key, T::default)`.
-pub fn use_global_or_default<T: 'static + Default>(key: &'static str) -> State<T> {
-    use_global_with(key, T::default)
 }
 
 /// Non-panicking existence check, for the rare case where you need to
@@ -894,11 +888,11 @@ pub fn try_use_global<T: 'static>(key: &'static str) -> Option<State<T>> {
 /// hook slot, recomputed once every render.
 ///
 /// The `compute` closure receives a shared `&T` reference — it must not
-/// mutate the source (use `use_state` + explicit mutation for that).
+/// mutate the source (`state` + explicit mutation for that).
 ///
 /// Must be called unconditionally, in the same order, every render —
-/// same rule as `use_state`.
-pub fn use_computed<T: 'static, R: 'static>(
+/// same rule as `state`.
+pub fn computed<T: 'static, R: 'static>(
     source: State<T>,
     compute: impl FnOnce(&T) -> R,
 ) -> State<R> {
@@ -911,7 +905,7 @@ pub fn use_computed<T: 'static, R: 'static>(
         let component_id = *rt
             .id_stack
             .last()
-            .expect("use_computed() called outside of a #[component] function");
+            .expect("computed() called outside of a #[component] function");
         let index = {
             let counter = rt
                 .hook_indices
@@ -947,21 +941,18 @@ pub fn use_computed<T: 'static, R: 'static>(
 /// (via `set`/`with_mut`).
 ///
 /// The `compute` closure receives a shared `&T` reference — it must not
-/// mutate the source (use `use_state` + explicit mutation for that).
+/// mutate the source (`state` + explicit mutation for that).
 ///
 /// Must be called unconditionally, in the same order, every render — same
-/// rule as `use_state`.
-pub fn use_memo<T: 'static, R: 'static>(
-    source: State<T>,
-    compute: impl FnOnce(&T) -> R,
-) -> State<R> {
+/// rule as `state`.
+pub fn memo<T: 'static, R: 'static>(source: State<T>, compute: impl FnOnce(&T) -> R) -> State<R> {
     // Claim this hook's slot first (bumps hook_indices like any other hook).
     let (component_id, index) = RUNTIME.with(|rt| {
         let mut rt = rt.borrow_mut();
         let component_id = *rt
             .id_stack
             .last()
-            .expect("use_computed() called outside of a #[component] function");
+            .expect("memo() called outside of a #[component] function");
         let index = {
             let counter = rt
                 .hook_indices
@@ -1088,10 +1079,10 @@ pub fn use_key() -> KeyHandle {
 // Custom events with bubbling
 // -------------------------------------------------------------------------
 
-/// A callable handle returned by [`use_emit`]. Cheaply cloneable so it can
+/// A callable handle returned by [`emitter`]. Cheaply cloneable so it can
 /// be moved into multiple closures.
 ///
-/// Calling it fires every [`use_on`] listener registered for the same event
+/// Calling it fires every [`listen`] listener registered for the same event
 /// name whose component is an ancestor of (or equal to) the emitting
 /// component, in **bubbling order** (closest ancestor first → root last).
 pub struct Emitter<T: 'static> {
@@ -1164,7 +1155,7 @@ impl<T: 'static> Emitter<T> {
         }
     }
 
-    /// Emit the event **globally** — every registered [`use_on`] listener for
+    /// Emit the event **globally** — every registered [`listen`] listener for
     /// this event name is called, regardless of whether it is an ancestor of
     /// the emitting component. Listeners fire in registration order.
     ///
@@ -1215,7 +1206,7 @@ impl<T: 'static> Emitter<T> {
 }
 
 /// Returns an [`Emitter`] that, when called, dispatches a typed custom
-/// event to every [`use_on`] listener registered on an ancestor component
+/// event to every [`listen`] listener registered on an ancestor component
 /// (including this component itself), in bubbling order.
 ///
 /// Must be called inside a `#[component]` function.
@@ -1225,17 +1216,17 @@ impl<T: 'static> Emitter<T> {
 /// #[component]
 /// fn my_input<'a>() -> TuiNode<'a> {
 ///     let keys  = use_key();
-///     let emit  = use_emit::<String>("submitted");
+///     let emit  = emitter::<String>("submitted");
 ///     keys.on(KeyCode::Enter, move || emit.emit("hello".into()));
 ///     tui! { <Input placeholder={"press Enter"} /> }
 /// }
 /// ```
-pub fn use_emit<T: 'static>(event_name: &'static str) -> Emitter<T> {
+pub fn emitter<T: 'static>(event_name: &'static str) -> Emitter<T> {
     let component_id = RUNTIME.with(|rt| {
         let rt = rt.borrow();
         *rt.id_stack
             .last()
-            .expect("use_emit() called outside of a #[component] function")
+            .expect("emitter() called outside of a #[component] function")
     });
     Emitter {
         event_name,
@@ -1259,10 +1250,10 @@ impl<T: Clone + 'static> Bind<T> {
     }
 }
 
-pub fn use_bind<T: Clone + 'static>(current: T, event_name: &'static str) -> Bind<T> {
+pub fn bind<T: Clone + 'static>(current: T, event_name: &'static str) -> Bind<T> {
     Bind {
         current,
-        emitter: use_emit::<T>(event_name),
+        emitter: emitter::<T>(event_name),
     }
 }
 
@@ -1280,8 +1271,8 @@ pub fn use_bind<T: Clone + 'static>(current: T, event_name: &'static str) -> Bin
 /// ```ignore
 /// #[component]
 /// fn parent<'a>() -> TuiNode<'a> {
-///     let log = use_state_keyed("log", Vec::<String>::new);
-///     use_on::<String>("submitted", {
+///     let log = state(Vec::<String>::new);
+///     listen::<String>("submitted", {
 ///         let log = log.clone();
 ///         move |msg: &String| {
 ///             log.with_mut(|v| v.push(msg.clone()));
@@ -1291,7 +1282,7 @@ pub fn use_bind<T: Clone + 'static>(current: T, event_name: &'static str) -> Bin
 ///     tui! { <my_input /> }
 /// }
 /// ```
-pub fn use_on<T: 'static>(
+pub fn listen<T: 'static>(
     event_name: &'static str,
     handler: impl FnMut(&T) -> Propagation + 'static,
 ) {
@@ -1300,7 +1291,7 @@ pub fn use_on<T: 'static>(
             .borrow()
             .id_stack
             .last()
-            .expect("use_on() called outside of a #[component] function");
+            .expect("listen() called outside of a #[component] function");
         use_on_component_id(component_id, event_name, handler);
     });
 }

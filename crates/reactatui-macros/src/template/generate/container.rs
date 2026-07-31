@@ -60,7 +60,7 @@ pub fn gen_container(element: &Element, kind: ContainerKind) -> TokenStream2 {
         quote! { #ty::#constructor(#constructor_args #items_ident) },
         &element.props,
         BuilderProps {
-            skip: &[],
+            skip: &["slot"],
             include_style: true,
             bind_error: "bind props require #[component] metadata support",
         },

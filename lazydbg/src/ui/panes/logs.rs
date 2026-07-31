@@ -6,10 +6,10 @@ use crate::logger::SharedLogStore;
 /// A scrollable paragraph widget displaying a log of events.
 /// Handles arrow keys for manual panning and mouse wheel events for scrolling.
 #[component]
-pub fn Logs<'a>(is_active: bool) -> TuiNode<'a> {
+pub fn Logs<'a>(#[prop] is_active: bool) -> TuiNode<'a> {
     // scroll offset: (y, x)
-    let scroll_offset: State<(u16, u16)> = use_global_or_default("scroll-offset");
-    let logs: State<SharedLogStore> = use_global("logs");
+    let scroll_offset: State<(u16, u16)> = global_or("scroll-offset", Default::default);
+    let logs: State<SharedLogStore> = global("logs");
 
     let scroll_x = move |delta: i16| {
         scroll_offset.with_mut(|o| apply_scroll_delta(&mut o.1, delta));

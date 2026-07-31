@@ -1,7 +1,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::{Paragraph, Widget};
-use reactatui::hooks::{register_mouse_region, use_state};
+use reactatui::hooks::{register_mouse_region, state};
 use reactatui::layout::Size;
 use reactatui::measure::{Measured, blit_measured, measure_node};
 use reactatui::prelude::*;
@@ -9,7 +9,7 @@ use reactatui::prelude::*;
 use crate::Scroll;
 
 #[component]
-pub fn List<'a>(r#virtual: bool, #[children] children: Vec<TuiNode<'a>>) -> TuiNode<'a> {
+pub fn List<'a>(#[prop] r#virtual: bool, #[children] children: Vec<TuiNode<'a>>) -> TuiNode<'a> {
     let items = flatten_items(children);
 
     if r#virtual {
@@ -60,7 +60,7 @@ fn apply_scroll_delta(offset: &mut u16, delta: i16) {
 /// beyond that one measurement.
 
 fn render_virtualized<'a>(items: Vec<TuiNode<'a>>) -> TuiNode<'a> {
-    let offset = use_state::<u16>(|| 0);
+    let offset = state::<u16>(|| 0);
 
     let raw_offset = offset.get();
 

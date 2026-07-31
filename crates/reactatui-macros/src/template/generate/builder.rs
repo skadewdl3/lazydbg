@@ -60,21 +60,25 @@ pub fn has_bind_prop(props: &[Prop]) -> bool {
     props.iter().any(|prop| matches!(prop, Prop::Bind { .. }))
 }
 
-/// Returns positional argument expressions for the current legacy component call path.
+/// Returns component props in stable name order.
 ///
-/// Once component prop metadata exists, this should be replaced by named prop struct
-/// construction rather than relying on prop order.
-pub fn normal_component_args<'a>(
-    props: &'a [Prop],
-    skip_names: &'a [&'a str],
-) -> impl Iterator<Item = TokenStream2> + 'a {
-    props.iter().filter_map(move |prop| match prop {
-        Prop::Named { name, value } if !is_name_skipped(name, skip_names) => {
-            Some(quote! { #value })
-        }
-        Prop::Boolean(name) if !is_name_skipped(name, skip_names) => Some(quote! { true }),
-        _ => None,
-    })
+/// `#[component]` emits its hidden renderer with `#[prop]` parameters in the
+/// same order, so template attribute order has no effect on argument binding.
+pub fn component_prop_args(props: &[Prop], skip_names: &[&str]) -> Vec<(Ident, TokenStream2)> {
+    let mut props: Vec<_> = props
+        .iter()
+        .filter_map(|prop| match prop {
+            Prop::Named { name, value } if !is_name_skipped(name, skip_names) => {
+                Some((name.clone(), value.clone()))
+            }
+            Prop::Boolean(name) if !is_name_skipped(name, skip_names) => {
+                Some((name.clone(), quote! { true }))
+            }
+            _ => None,
+        })
+        .collect();
+    props.sort_by_key(|(name, _)| crate::component_prop_name(name));
+    props
 }
 
 /// Emits pushes for layout-container children, preserving control flow.

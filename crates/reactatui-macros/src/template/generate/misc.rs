@@ -90,9 +90,9 @@ pub fn gen_widget_expr(element: &Element, omit_flex_props: bool) -> TokenStream2
     };
 
     let skip = if omit_flex_props {
-        &["state", "layout", "flex", "min", "max"][..]
+        &["state", "layout", "slot", "flex", "min", "max"][..]
     } else {
-        &["state", "layout"][..]
+        &["state", "layout", "slot"][..]
     };
 
     apply_builder_props(

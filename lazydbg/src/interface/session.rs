@@ -1,4 +1,4 @@
-use reactatui::hooks::use_global_with;
+use reactatui::hooks::global_or;
 
 use crate::interface::{
     DbgBackend,
@@ -43,7 +43,7 @@ impl DbgSession {
 
     pub fn frames(&mut self) {
         let f = self.backend.frames().unwrap();
-        let frames = use_global_with::<Vec<Box<dyn DbgFrame>>>("frames", || Vec::new());
+        let frames = global_or::<Vec<Box<dyn DbgFrame>>>("frames", || Vec::new());
         frames.set(f);
     }
 }

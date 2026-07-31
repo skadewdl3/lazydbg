@@ -36,13 +36,18 @@ pub fn gen_fragment(children: &[Node]) -> TokenStream2 {
 }
 
 fn gen_element(element: &Element) -> TokenStream2 {
-    if element.tag.dynamic.is_some() {
-        return gen_dynamic_component(element);
-    }
+    let node = if element.tag.dynamic.is_some() {
+        gen_dynamic_component(element)
+    } else {
+        match element.tag.root_name().as_deref() {
+            Some("Flex") => gen_container(element, ContainerKind::Flex),
+            Some("Grid") => gen_container(element, ContainerKind::Grid),
+            _ => gen_custom_component(element),
+        }
+    };
 
-    match element.tag.root_name().as_deref() {
-        Some("Flex") => gen_container(element, ContainerKind::Flex),
-        Some("Grid") => gen_container(element, ContainerKind::Grid),
-        _ => gen_custom_component(element),
+    match crate::template::generate::builder::named_prop(&element.props, "slot") {
+        Some(slot) => quote! { ::reactatui::TuiNode::slot(#node, #slot) },
+        None => node,
     }
 }

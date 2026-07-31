@@ -179,8 +179,8 @@ impl StatefulWidget for InputBase<'_> {
 /// handles normal text editing keybinds, and emits `"submit"` when Enter is pressed.
 #[component]
 pub fn Input<'a>(placeholder: &'a str, focused: bool, show_cursor: bool) -> TuiNode<'a> {
-    let state = use_state(InputState::default);
-    let submit_emitter = use_emit::<Option<String>>("submit");
+    let state = state(InputState::default);
+    let submit_emitter = emitter::<Option<String>>("submit");
 
     if focused {
         let keys = use_key();

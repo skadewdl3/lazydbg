@@ -1,7 +1,7 @@
 use ratatui::widgets::{Borders, Paragraph};
 use reactatui::{
     TuiNode, component,
-    hooks::{Propagation, use_emit, use_global_with, use_key, use_memo, use_state},
+    hooks::{Propagation, emitter, global_or, memo, state, use_key},
     keybindings, tui,
 };
 use reactatui_widgets::{Block, List};
@@ -10,13 +10,13 @@ use crate::interface::backend::DbgFrame;
 
 /// A single stack frame item component.
 #[component]
-pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
+pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, #[prop] active: bool) -> TuiNode<'a> {
     let level = frame.level().unwrap_or("?".into());
     let addr = frame.addr().unwrap_or("?".into());
     let func = frame.func().unwrap_or("?".into());
     let file = frame.file().unwrap_or("?".into());
     let line = frame.line().unwrap_or("?".into());
-    let emitter = use_emit::<()>("frame_selected");
+    let emitter = emitter::<()>("frame_selected");
 
     let thing = move |_| {
         emitter.emit(());
@@ -36,9 +36,9 @@ pub fn FrameItem<'a>(frame: &Box<dyn DbgFrame>, active: bool) -> TuiNode<'a> {
 #[component]
 pub fn Frame<'a>() -> TuiNode<'a> {
     // TODO: What happens when the frame count changes?
-    let frames = use_global_with::<Vec<Box<dyn DbgFrame>>>("frames", || Vec::new());
-    let frame_count = use_memo(frames, |f| f.len() as i64);
-    let selected_frame = use_state::<Option<i64>>(|| None);
+    let frames = global_or::<Vec<Box<dyn DbgFrame>>>("frames", || Vec::new());
+    let frame_count = memo(frames, |f| f.len() as i64);
+    let selected_frame = state::<Option<i64>>(|| None);
     let keys = use_key();
 
     keybindings!(keys, {
@@ -59,13 +59,13 @@ pub fn Frame<'a>() -> TuiNode<'a> {
     }
 
     tui! {
-        <Block::default title={"Stack Frame"} borders={Borders::ALL}>
+        <Block::default title="Stack Frame" borders={Borders::ALL}>
             <List virtual={false}>
                 for frame in frames.get() {
-                    <FrameItem(
-                            &frame,
+                    <FrameItem(&frame)
+                        active={
                             selected_frame.get().unwrap() == frame.level().unwrap().parse::<i64>().unwrap()
-                        )
+                        }
                     />
                 }
             </List>

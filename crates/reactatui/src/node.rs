@@ -14,6 +14,7 @@ pub enum TuiNode<'a> {
     Flex(FlexNode<'a>),
     Grid(GridNode<'a>),
     Styled(Box<TuiNode<'a>>, Style),
+    Slotted(Box<TuiNode<'a>>, String),
     Empty,
 }
 
@@ -78,17 +79,28 @@ impl<'a> TuiNode<'a> {
                 "dynamic component requires exactly one top-level component, but received {}",
                 children.len()
             ),
-            Self::Empty => {
-                panic!(
-                    "dynamic component requires exactly one top-level component, but received none"
-                )
-            }
+            Self::Empty => Self::Empty,
             node => node,
         }
     }
 
     pub fn style(self, style: impl Into<Style>) -> Self {
         Self::Styled(Box::new(self), style.into())
+    }
+
+    #[doc(hidden)]
+    pub fn slot(self, name: impl Into<String>) -> Self {
+        Self::Slotted(Box::new(self), name.into())
+    }
+
+    pub(crate) fn opaque_fragment(children: Vec<TuiNode<'a>>) -> Self {
+        match children.len() {
+            0 => Self::Empty,
+            1 => children.into_iter().next().expect("length was checked"),
+            _ => Self::Widget(Box::new(move |area, buf| {
+                render_fragment(children, area, buf)
+            })),
+        }
     }
 
     pub fn take_style(self) -> (Style, Self) {
@@ -137,8 +149,15 @@ impl<'a> Widget for TuiNode<'a> {
                 }
                 other => other.render(area, buf),
             },
+            TuiNode::Slotted(node, _) => node.render(area, buf),
             TuiNode::Empty => {}
         }
+    }
+}
+
+impl<'a> From<Option<TuiNode<'a>>> for TuiNode<'a> {
+    fn from(node: Option<TuiNode<'a>>) -> Self {
+        node.unwrap_or(TuiNode::Empty)
     }
 }
 

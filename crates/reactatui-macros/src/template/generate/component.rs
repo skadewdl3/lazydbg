@@ -1,7 +1,7 @@
 use crate::template::{
     ast::{Element, Prop},
     generate::{
-        builder::{has_bind_prop, named_prop, normal_component_args},
+        builder::{component_prop_args, has_bind_prop, named_prop},
         gen_node,
         misc::gen_widget_expr,
         mouse::maybe_wrap_with_mouse,
@@ -16,10 +16,6 @@ pub fn gen_custom_component(element: &Element) -> TokenStream2 {
 
     if has_bind_prop(&element.props) {
         return quote! { compile_error!("bind props require the #[component] props metadata design to be finalized") };
-    }
-
-    if !element.slots.is_empty() {
-        return quote! { compile_error!("named slots require the #[component] props metadata design to be finalized") };
     }
 
     let event_hooks = component_event_hooks(element);
@@ -152,33 +148,29 @@ fn gen_widget_component_call(element: &Element) -> TokenStream2 {
 }
 
 fn gen_function_component_call(element: &Element, tag: TokenStream2) -> TokenStream2 {
-    let children = (!element.children.is_empty()).then(|| gen_children_vec(element));
+    let slots = gen_children_vec(element);
+    let positional = element.tag.constructor_args.as_ref();
+    let positional = positional
+        .filter(|args| !args.is_empty())
+        .map(|args| quote! { #args, });
+    let props = component_prop_args(&element.props, &["children", "style", "layout", "slot"]);
+    let prop_checks = props.iter().map(|(name, _)| {
+        let marker = crate::component_prop_marker(name);
+        quote! { #tag::#marker(); }
+    });
+    let prop_values = props.iter().map(|(_, value)| value);
+    let prop_values = (!props.is_empty()).then(|| quote! { #(#prop_values),*, });
 
-    if let Some(ctor_args) = &element.tag.constructor_args {
-        return match children {
-            Some(children) => {
-                quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#ctor_args, #children)) }
-            }
-            None => {
-                quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#ctor_args)) }
-            }
-        };
-    }
-
-    let args: Vec<_> =
-        normal_component_args(&element.props, &["children", "style", "layout"]).collect();
-    match (args.is_empty(), children) {
-        (true, Some(children)) => {
-            quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#children)) }
-        }
-        (false, Some(children)) => {
-            quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#(#args),*, #children)) }
-        }
-        (true, None) => quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag()) },
-        (false, None) => {
-            quote! { ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(#tag(#(#args),*)) }
-        }
-    }
+    quote! {{
+        #(#prop_checks)*
+        ::core::convert::Into::<::reactatui::TuiNode<'_>>::into(
+            #tag::__reactatui_render(
+                #positional
+                #prop_values
+                ::reactatui::Slot::new(#slots)
+            )
+        )
+    }}
 }
 
 fn gen_children_vec(element: &Element) -> TokenStream2 {

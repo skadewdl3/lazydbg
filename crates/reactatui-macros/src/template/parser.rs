@@ -152,15 +152,16 @@ impl Parser {
         close_tag: &Tag,
     ) -> syn::Result<(Vec<Node>, Vec<(Ident, Vec<Node>)>)> {
         let mut children = Vec::new();
-        let mut slots = Vec::new();
         while !self.is_done() {
             if self.starts_closing_tag(Some(close_tag)) {
                 self.consume_closing_tag(Some(close_tag))?;
-                return Ok((children, slots));
+                return Ok((children, Vec::new()));
             }
 
             if self.starts_slot_open() {
-                slots.push(self.parse_slot()?);
+                return Err(self.error(
+                    "named slot tags are unsupported\nhelp: add `slot={\"name\"}` to each child instead",
+                ));
             } else {
                 children.push(self.parse_node()?);
             }
@@ -340,11 +341,21 @@ impl Parser {
             return Ok(Prop::Boolean(name));
         }
 
+        if let Some(TokenTree::Literal(literal)) = self.peek().cloned()
+            && syn::parse2::<syn::LitStr>(quote::quote! { #literal }).is_ok()
+        {
+            self.pos += 1;
+            return Ok(Prop::Named {
+                name,
+                value: quote::quote! { #literal },
+            });
+        }
+
         let Some(TokenTree::Group(group)) = self.peek().cloned() else {
             return Err(self.error_spanned(
                 &name,
                 format!(
-                    "value for prop `{name}` must be wrapped in braces\nhelp: write `{name}={{value}}`"
+                    "value for prop `{name}` must be wrapped in braces unless it is a string literal\nhelp: write `{name}=\"value\"` or `{name}={{value}}`"
                 ),
             ));
         };
@@ -352,7 +363,7 @@ impl Parser {
             return Err(self.error_spanned(
                 &name,
                 format!(
-                    "value for prop `{name}` must be wrapped in braces\nhelp: write `{name}={{value}}`"
+                    "value for prop `{name}` must be wrapped in braces unless it is a string literal\nhelp: write `{name}=\"value\"` or `{name}={{value}}`"
                 ),
             ));
         }
@@ -570,45 +581,6 @@ impl Parser {
             && !matches!(self.peek_n(3), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
     }
 
-    fn starts_slot_close(&self) -> bool {
-        matches!(self.peek(), Some(TokenTree::Punct(punct)) if punct.as_char() == '<')
-            && matches!(self.peek_n(1), Some(TokenTree::Punct(punct)) if punct.as_char() == '/')
-            && matches!(self.peek_n(2), Some(TokenTree::Ident(ident)) if ident == "slot")
-            && matches!(self.peek_n(3), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
-            && !matches!(self.peek_n(4), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
-    }
-
-    fn parse_slot(&mut self) -> syn::Result<(Ident, Vec<Node>)> {
-        self.expect_punct('<')?;
-        self.expect_keyword("slot")?;
-        self.expect_single_colon()?;
-        let name = self.expect_ident()?;
-        self.expect_punct('>')?;
-
-        let mut children = Vec::new();
-        while !self.is_done() {
-            if self.starts_slot_close() {
-                self.expect_punct('<')?;
-                self.expect_punct('/')?;
-                self.expect_keyword("slot")?;
-                self.expect_single_colon()?;
-                let close_name = self.expect_ident()?;
-                self.expect_punct('>')?;
-                if close_name != name {
-                    return Err(self.error_spanned(
-                        &close_name,
-                        format!(
-                            "slot closing tag `</slot:{close_name}>` does not match `<slot:{name}>`\nhelp: close the slot with `</slot:{name}>`"
-                        ),
-                    ));
-                }
-                return Ok((name, children));
-            }
-            children.push(self.parse_node()?);
-        }
-        Err(self.error("unterminated slot"))
-    }
-
     fn consume_closing_tag(&mut self, close_tag: Option<&Tag>) -> syn::Result<()> {
         self.expect_punct('<')?;
         self.expect_punct('/')?;
@@ -669,17 +641,6 @@ impl Parser {
 
     fn peek_punct(&self, ch: char) -> bool {
         matches!(self.peek(), Some(TokenTree::Punct(punct)) if punct.as_char() == ch)
-    }
-
-    fn expect_single_colon(&mut self) -> syn::Result<()> {
-        if matches!(self.peek(), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
-            && !matches!(self.peek_n(1), Some(TokenTree::Punct(punct)) if punct.as_char() == ':')
-        {
-            self.pos += 1;
-            Ok(())
-        } else {
-            Err(self.error("expected `:`"))
-        }
     }
 
     fn starts_fat_arrow(&self) -> bool {
@@ -791,16 +752,22 @@ mod tests {
     use super::Parser;
 
     #[test]
-    fn prop_value_error_suggests_brace_syntax() {
+    fn string_literal_props_do_not_require_braces() {
         let result =
             Parser::new(quote! { <Block title="heading" /> }).parse_nodes_until_close(None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn non_string_literal_props_still_require_braces() {
+        let result = Parser::new(quote! { <Block width=42 /> }).parse_nodes_until_close(None);
         let Err(error) = result else {
-            panic!("unbraced prop value should fail");
+            panic!("unbraced numeric prop value should fail");
         };
         let message = error.to_string();
 
-        assert!(message.contains("value for prop `title` must be wrapped in braces"));
-        assert!(message.contains("write `title={value}`"));
+        assert!(message.contains("unless it is a string literal"));
+        assert!(message.contains("write `width=\"value\"` or `width={value}`"));
     }
 
     #[test]

@@ -18,11 +18,11 @@ enum InputUse {
 /// Responds to global Esc key to trigger application quit.
 #[component]
 pub fn Home<'a>() -> TuiNode<'a> {
-    let should_quit = use_global_with("should-quit", || false);
-    let session = use_global::<DbgSession>("dbg-session");
+    let should_quit = global_or("should-quit", || false);
+    let session = global::<DbgSession>("dbg-session");
     let keys = use_key();
-    let open = use_state(|| false);
-    let input_use = use_state(|| InputUse::None);
+    let open = state(|| false);
+    let input_use = state(|| InputUse::None);
 
     let open_input = move |iu: InputUse| {
         input_use.set(iu);
@@ -81,8 +81,8 @@ pub fn Home<'a>() -> TuiNode<'a> {
                 <Logs is_active={false} />
             </Flex>
             <Keybinds layout={layout!{size: 1}} />
-            <Dialog::new visible={open.get()} width={"50%"} layout={layout!{ignore: true}}>
-             <{input} />
+            <Dialog visible={open.get()} width="50%" layout={layout!{ignore: true}}>
+                <{input} />
             </Dialog>
         </Flex>
     }

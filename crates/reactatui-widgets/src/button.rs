@@ -32,9 +32,13 @@ use crate::Block;
 /// item's flex/grid placement instead of reaching this component — wrap
 /// it in a plain fragment or an intermediate component if you need both.
 #[component]
-pub fn Button<'a>(label: &'a str, borders: Borders, disabled: bool) -> TuiNode<'a> {
-    let hovered = use_state(|| false);
-    let emit = use_emit::<()>("click");
+pub fn Button<'a>(
+    #[prop] label: &'a str,
+    #[prop] borders: Borders,
+    #[prop] disabled: bool,
+) -> TuiNode<'a> {
+    let hovered = state(|| false);
+    let emit = emitter::<()>("click");
 
     tui! {
         <Block::default
