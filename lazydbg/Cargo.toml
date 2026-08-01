@@ -12,7 +12,7 @@ reactatui = { path = "../crates/reactatui" }
 reactatui-macros = { path = "../crates/reactatui-macros" }
 reactatui-widgets = { path = "../crates/reactatui-widgets" }
 lazydbg-mi = { path = "../crates/lazydbg-mi" }
-lazydbg-dap = { path = "../crates/lazydbg-dap" }
+lazydbg-dap = { path = "../crates/lazydbg-dap", features = ["lldb-21"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 strum = { version = "0.28.0", features = ["derive"] }

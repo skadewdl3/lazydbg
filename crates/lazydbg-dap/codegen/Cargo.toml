@@ -1,0 +1,12 @@
+[package]
+name = "lazydbg-dap-codegen"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+prettyplease = "0.2.37"
+schemars = "0.8.22"
+serde_json = "1.0.151"
+syn = "2.0.111"
+typify = "0.7.0"

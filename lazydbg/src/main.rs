@@ -9,7 +9,7 @@ use ui::Home;
 
 use crate::{
     app_state::AppState,
-    interface::{DbgBackend, DbgSession, gdb::GdbBackend},
+    interface::{DbgBackend, DbgSession, gdb::GdbBackend, lldb::LldbBackend},
     logger::init_logging,
 };
 
@@ -39,7 +39,7 @@ fn init<'a>(runtime: &Runtime, args: Args) -> Result<AppState, &'a str> {
                 "Cannot use two debugger backends at once. Please pass either --lldb or --gdb",
             );
         } else if args.lldb {
-            todo!("LLDB Backend isn't implemented yet");
+            Box::new(LldbBackend::new())
         } else {
             Box::new(GdbBackend::new())
         }

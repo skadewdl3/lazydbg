@@ -6,12 +6,11 @@ use lazydbg_mi::{
     parse_line,
     record::AsyncClass,
 };
-use thiserror::Error;
 use tracing::{error, info, trace};
 
 use crate::interface::{
     DbgBackend,
-    backend::{DbgBackendStatus, DbgFrame},
+    backend::{BackendError, DbgBackendStatus, DbgFrame},
 };
 use std::{
     collections::HashMap,
@@ -36,18 +35,6 @@ pub struct GdbBackend {
     token: u64,
     pending: Arc<Mutex<PendingMap>>,
     async_listeners: Arc<Mutex<Vec<AsyncListener>>>,
-}
-
-#[derive(Debug, Error)]
-pub enum BackendError {
-    #[error("deserialization")]
-    Deserialize(#[from] lazydbg_mi::error::DeserializationError),
-    #[error("serialization")]
-    Serialize(#[from] lazydbg_mi::error::SerializationError),
-    #[error("parse")]
-    Parse(#[from] lazydbg_mi::error::ParseError),
-    #[error("io")]
-    Io(#[from] std::io::Error),
 }
 
 impl GdbBackend {

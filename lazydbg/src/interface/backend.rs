@@ -1,4 +1,20 @@
-use crate::interface::gdb::BackendError;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum BackendError {
+    #[error("MI deserialization failed")]
+    MiDeserialize(#[from] lazydbg_mi::error::DeserializationError),
+    #[error("MI serialization failed")]
+    MiSerialize(#[from] lazydbg_mi::error::SerializationError),
+    #[error("MI parsing failed")]
+    MiParse(#[from] lazydbg_mi::error::ParseError),
+    #[error("DAP JSON processing failed")]
+    DapJson(#[from] serde_json::Error),
+    #[error("debug adapter protocol error: {0}")]
+    Protocol(String),
+    #[error("I/O error")]
+    Io(#[from] std::io::Error),
+}
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum DbgBackendStatus {

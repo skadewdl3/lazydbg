@@ -1,6 +1,6 @@
 pub mod backend;
 pub mod gdb;
-// pub mod lldb; // TODO -> DAP parser isn't implemented
+pub mod lldb;
 mod session;
 
 pub use backend::DbgBackend;

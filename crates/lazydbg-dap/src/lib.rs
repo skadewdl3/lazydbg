@@ -1,14 +1,17 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Typed client-side support for the Debug Adapter Protocol.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#![forbid(unsafe_code)]
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod client;
+pub mod codec;
+pub mod error;
+#[allow(clippy::all)]
+#[rustfmt::skip]
+mod generated;
+pub mod lldb;
+pub mod protocol;
+pub mod request;
+pub mod requests;
+
+pub use generated::*;
+pub use request::DapRequest;
