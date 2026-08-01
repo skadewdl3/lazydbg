@@ -4,6 +4,12 @@
 //! re-exports present the same types as operations at the transport boundary.
 
 pub use crate::request::ThreadsArguments as Threads;
+
+impl Default for crate::ConfigurationDoneArguments {
+    fn default() -> Self {
+        Self(serde_json::Map::new())
+    }
+}
 pub use crate::{
     ConfigurationDoneArguments as ConfigurationDone, DisconnectArguments as Disconnect,
     SetBreakpointsArguments as SetBreakpoints,

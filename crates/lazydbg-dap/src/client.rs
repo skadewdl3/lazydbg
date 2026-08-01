@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
+    marker::PhantomData,
     num::NonZeroU32,
     sync::{
         Arc, Mutex,
@@ -11,18 +12,69 @@ use std::{
     time::Duration,
 };
 
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::{
-    RunInTerminalRequest, RunInTerminalResponseBody, StartDebuggingRequest,
+    Response, RunInTerminalRequest, RunInTerminalResponseBody, StartDebuggingRequest,
     codec::{DEFAULT_MAX_CONTENT_LENGTH, FrameReader},
     error::{Error, Result},
     protocol::{DapResponse, Extensible, Incoming, decode_event, decode_reverse_request},
     request::DapRequest,
 };
 
-type Pending = Arc<Mutex<HashMap<u32, mpsc::Sender<Value>>>>;
+type Pending = Arc<Mutex<HashMap<u32, mpsc::Sender<Extensible<Response>>>>>;
+
+pub struct PendingRequest<R> {
+    receiver: Option<mpsc::Receiver<Extensible<Response>>>,
+    pending: Pending,
+    request_seq: u32,
+    command: String,
+    response: PhantomData<R>,
+}
+
+impl<R: DeserializeOwned> PendingRequest<R> {
+    pub fn wait(self) -> Result<R> {
+        self.wait_response().map(DapResponse::into_body)
+    }
+
+    pub fn wait_timeout(self, timeout: Duration) -> Result<R> {
+        self.wait_response_timeout(timeout)
+            .map(DapResponse::into_body)
+    }
+
+    pub fn wait_response(mut self) -> Result<DapResponse<R>> {
+        let response = self
+            .receiver
+            .take()
+            .expect("pending request receiver was already consumed")
+            .recv()
+            .map_err(|_| Error::Disconnected)?;
+        decode_response(response, &self.command)
+    }
+
+    pub fn wait_response_timeout(mut self, timeout: Duration) -> Result<DapResponse<R>> {
+        let response = self
+            .receiver
+            .take()
+            .expect("pending request receiver was already consumed")
+            .recv_timeout(timeout)
+            .map_err(|error| match error {
+                mpsc::RecvTimeoutError::Timeout => Error::Timeout(timeout),
+                mpsc::RecvTimeoutError::Disconnected => Error::Disconnected,
+            })?;
+        decode_response(response, &self.command)
+    }
+}
+
+impl<R> Drop for PendingRequest<R> {
+    fn drop(&mut self) {
+        self.pending
+            .lock()
+            .unwrap_or_else(|lock| lock.into_inner())
+            .remove(&self.request_seq);
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionConfig {
@@ -87,24 +139,44 @@ impl<W: Write + Send + 'static> Client<W> {
         )
     }
 
-    pub fn send<Rq: DapRequest>(&self, arguments: &Rq) -> Result<DapResponse<Rq::Response>> {
-        self.send_request::<Rq, Rq::Response>(arguments, None)
+    pub fn send<Rq: DapRequest>(&self, arguments: &Rq) -> Result<Rq::Response> {
+        self.begin(arguments)?.wait()
     }
 
     pub fn send_timeout<Rq: DapRequest>(
         &self,
         arguments: &Rq,
         timeout: Duration,
+    ) -> Result<Rq::Response> {
+        self.begin(arguments)?.wait_timeout(timeout)
+    }
+
+    pub fn send_response<Rq: DapRequest>(
+        &self,
+        arguments: &Rq,
     ) -> Result<DapResponse<Rq::Response>> {
-        self.send_request::<Rq, Rq::Response>(arguments, Some(timeout))
+        self.begin(arguments)?.wait_response()
+    }
+
+    pub fn send_response_timeout<Rq: DapRequest>(
+        &self,
+        arguments: &Rq,
+        timeout: Duration,
+    ) -> Result<DapResponse<Rq::Response>> {
+        self.begin(arguments)?.wait_response_timeout(timeout)
+    }
+
+    pub fn begin<Rq: DapRequest>(&self, arguments: &Rq) -> Result<PendingRequest<Rq::Response>> {
+        let arguments = Rq::INCLUDE_ARGUMENTS.then_some(arguments);
+        self.begin_raw(Rq::COMMAND, arguments)
     }
 
     pub fn send_custom<A: Serialize, R: DeserializeOwned>(
         &self,
         command: &str,
         arguments: &A,
-    ) -> Result<DapResponse<R>> {
-        self.send_raw(command, Some(arguments), None)
+    ) -> Result<R> {
+        self.begin_custom(command, arguments)?.wait()
     }
 
     pub fn send_custom_timeout<A: Serialize, R: DeserializeOwned>(
@@ -112,8 +184,34 @@ impl<W: Write + Send + 'static> Client<W> {
         command: &str,
         arguments: &A,
         timeout: Duration,
+    ) -> Result<R> {
+        self.begin_custom(command, arguments)?.wait_timeout(timeout)
+    }
+
+    pub fn send_custom_response<A: Serialize, R: DeserializeOwned>(
+        &self,
+        command: &str,
+        arguments: &A,
     ) -> Result<DapResponse<R>> {
-        self.send_raw(command, Some(arguments), Some(timeout))
+        self.begin_custom(command, arguments)?.wait_response()
+    }
+
+    pub fn send_custom_response_timeout<A: Serialize, R: DeserializeOwned>(
+        &self,
+        command: &str,
+        arguments: &A,
+        timeout: Duration,
+    ) -> Result<DapResponse<R>> {
+        self.begin_custom(command, arguments)?
+            .wait_response_timeout(timeout)
+    }
+
+    pub fn begin_custom<A: Serialize, R>(
+        &self,
+        command: &str,
+        arguments: &A,
+    ) -> Result<PendingRequest<R>> {
+        self.begin_raw(command, Some(arguments))
     }
 
     pub fn respond_run_in_terminal(
@@ -133,7 +231,7 @@ impl<W: Write + Send + 'static> Client<W> {
 
     pub fn respond_custom<B: Serialize>(
         &self,
-        request_seq: NonZeroU32,
+        request_seq: i32,
         command: &str,
         body: Option<&B>,
     ) -> Result<()> {
@@ -142,7 +240,7 @@ impl<W: Write + Send + 'static> Client<W> {
 
     pub fn respond_error(
         &self,
-        request_seq: NonZeroU32,
+        request_seq: i32,
         command: &str,
         message: &str,
         body: Option<&Value>,
@@ -159,21 +257,11 @@ impl<W: Write + Send + 'static> Client<W> {
         self.write(&response)
     }
 
-    fn send_request<Rq: DapRequest, R: DeserializeOwned>(
-        &self,
-        arguments: &Rq,
-        timeout: Option<Duration>,
-    ) -> Result<DapResponse<R>> {
-        let arguments = Rq::INCLUDE_ARGUMENTS.then_some(arguments);
-        self.send_raw(Rq::COMMAND, arguments, timeout)
-    }
-
-    fn send_raw<A: Serialize, R: DeserializeOwned>(
+    fn begin_raw<A: Serialize, R>(
         &self,
         command: &str,
         arguments: Option<&A>,
-        timeout: Option<Duration>,
-    ) -> Result<DapResponse<R>> {
+    ) -> Result<PendingRequest<R>> {
         let seq = self.use_seq()?;
         let request = OutboundRequest {
             seq,
@@ -194,51 +282,18 @@ impl<W: Write + Send + 'static> Client<W> {
             return Err(error);
         }
 
-        let raw = match timeout {
-            Some(timeout) => receiver.recv_timeout(timeout).map_err(|error| match error {
-                mpsc::RecvTimeoutError::Timeout => Error::Timeout(timeout),
-                mpsc::RecvTimeoutError::Disconnected => Error::Disconnected,
-            }),
-            None => receiver.recv().map_err(|_| Error::Disconnected),
-        };
-        let raw = match raw {
-            Ok(raw) => raw,
-            Err(error) => {
-                self.pending
-                    .lock()
-                    .unwrap_or_else(|lock| lock.into_inner())
-                    .remove(&seq.get());
-                return Err(error);
-            }
-        };
-
-        let header: ResponseHeader = serde_json::from_value(raw.clone())?;
-        if header.command != command {
-            return Err(Error::CommandMismatch {
-                expected: command.to_owned(),
-                actual: header.command,
-            });
-        }
-        if !header.success {
-            return Err(Error::Protocol {
-                command: command.to_owned(),
-                message: header.message.unwrap_or_else(|| "request failed".into()),
-                body: header.body,
-            });
-        }
-        let body = header.body.map(Extensible::from_value).transpose()?;
-        Ok(DapResponse::new(
-            header.seq,
-            header.request_seq,
-            header.command,
-            body,
-            raw,
-        ))
+        Ok(PendingRequest {
+            receiver: Some(receiver),
+            pending: Arc::clone(&self.pending),
+            request_seq: seq.get(),
+            command: command.to_owned(),
+            response: PhantomData,
+        })
     }
 
     fn respond_success<B: Serialize>(
         &self,
-        request_seq: NonZeroU32,
+        request_seq: i32,
         command: &str,
         body: Option<&B>,
     ) -> Result<()> {
@@ -289,17 +344,14 @@ fn read_loop<R: Read>(
                 .ok_or_else(|| Error::UnknownMessageType(String::new()))?;
             match message_type {
                 "response" => {
-                    let request_seq = raw
-                        .get("request_seq")
-                        .and_then(Value::as_u64)
-                        .and_then(|seq| u32::try_from(seq).ok())
-                        .ok_or_else(|| Error::InvalidHeader("invalid request_seq".into()))?;
+                    let response = Extensible::<Response>::from_value(raw)?;
+                    let request_seq = response.request_seq.get();
                     let sender = pending
                         .lock()
                         .unwrap_or_else(|lock| lock.into_inner())
                         .remove(&request_seq);
                     if let Some(sender) = sender {
-                        let _ = sender.send(raw);
+                        let _ = sender.send(response);
                     }
                 }
                 "event" => incoming
@@ -325,6 +377,34 @@ fn read_loop<R: Read>(
     }
 }
 
+fn decode_response<R: DeserializeOwned>(
+    response: Extensible<Response>,
+    expected_command: &str,
+) -> Result<DapResponse<R>> {
+    let (response, raw) = response.into_parts();
+    if response.command != expected_command {
+        return Err(Error::CommandMismatch {
+            expected: expected_command.to_owned(),
+            actual: response.command,
+        });
+    }
+    if !response.success {
+        return Err(Error::Protocol {
+            command: expected_command.to_owned(),
+            message: response.message.unwrap_or_else(|| "request failed".into()),
+            body: response.body,
+        });
+    }
+    let body = Extensible::from_value(response.body.unwrap_or(Value::Null))?;
+    Ok(DapResponse::new(
+        response.seq,
+        response.request_seq.get(),
+        response.command,
+        body,
+        raw,
+    ))
+}
+
 #[derive(Serialize)]
 struct OutboundRequest<'a, A> {
     seq: NonZeroU32,
@@ -340,21 +420,11 @@ struct OutboundResponse<'a, B> {
     seq: NonZeroU32,
     #[serde(rename = "type")]
     kind: &'static str,
-    request_seq: NonZeroU32,
+    request_seq: i32,
     success: bool,
     command: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     body: Option<&'a B>,
-}
-
-#[derive(Deserialize)]
-struct ResponseHeader {
-    seq: u32,
-    request_seq: u32,
-    success: bool,
-    command: String,
-    message: Option<String>,
-    body: Option<Value>,
 }

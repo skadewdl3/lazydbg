@@ -71,7 +71,7 @@ pub struct AttachRequest {
     pub arguments: AttachRequestArguments,
     pub command: AttachRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: AttachRequestType,
 }
@@ -295,7 +295,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -563,7 +563,7 @@ pub struct BreakpointEvent {
     pub body: BreakpointEventBody,
     pub event: BreakpointEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: BreakpointEventType,
 }
@@ -920,7 +920,7 @@ pub struct BreakpointLocationsRequest {
     pub arguments: ::std::option::Option<BreakpointLocationsArguments>,
     pub command: BreakpointLocationsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: BreakpointLocationsRequestType,
 }
@@ -1121,7 +1121,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -1515,7 +1515,7 @@ pub struct CancelRequest {
     pub arguments: ::std::option::Option<CancelArguments>,
     pub command: CancelRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: CancelRequestType,
 }
@@ -1694,7 +1694,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -2367,7 +2367,7 @@ pub struct CapabilitiesEvent {
     pub body: CapabilitiesEventBody,
     pub event: CapabilitiesEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: CapabilitiesEventType,
 }
@@ -3172,7 +3172,7 @@ pub struct CompletionsRequest {
     pub arguments: CompletionsArguments,
     pub command: CompletionsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: CompletionsRequestType,
 }
@@ -3371,7 +3371,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -3553,7 +3553,7 @@ pub struct ConfigurationDoneRequest {
     pub arguments: ::std::option::Option<ConfigurationDoneArguments>,
     pub command: ConfigurationDoneRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ConfigurationDoneRequestType,
 }
@@ -3733,7 +3733,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -3890,7 +3890,7 @@ pub struct ContinueRequest {
     pub arguments: ContinueArguments,
     pub command: ContinueRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ContinueRequestType,
 }
@@ -4083,7 +4083,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -4250,7 +4250,7 @@ pub struct ContinuedEvent {
     pub body: ContinuedEventBody,
     pub event: ContinuedEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ContinuedEventType,
 }
@@ -4695,7 +4695,7 @@ pub struct DataBreakpointInfoRequest {
     pub arguments: DataBreakpointInfoArguments,
     pub command: DataBreakpointInfoRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: DataBreakpointInfoRequestType,
 }
@@ -4912,7 +4912,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -5200,7 +5200,7 @@ pub struct DisassembleRequest {
     pub arguments: DisassembleArguments,
     pub command: DisassembleRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: DisassembleRequestType,
 }
@@ -5397,7 +5397,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -5806,7 +5806,7 @@ pub struct DisconnectRequest {
     pub arguments: ::std::option::Option<DisconnectArguments>,
     pub command: DisconnectRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: DisconnectRequestType,
 }
@@ -5985,7 +5985,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -6111,7 +6111,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -6351,7 +6351,7 @@ pub struct EvaluateRequest {
     pub arguments: EvaluateArguments,
     pub command: EvaluateRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: EvaluateRequestType,
 }
@@ -6583,7 +6583,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -6832,7 +6832,7 @@ pub struct Event {
     ///Type of event.
     pub event: ::std::string::String,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: EventType,
 }
@@ -7270,7 +7270,7 @@ pub struct ExceptionInfoRequest {
     pub arguments: ExceptionInfoArguments,
     pub command: ExceptionInfoRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ExceptionInfoRequestType,
 }
@@ -7479,7 +7479,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -7731,7 +7731,7 @@ pub struct ExitedEvent {
     pub body: ExitedEventBody,
     pub event: ExitedEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ExitedEventType,
 }
@@ -8027,7 +8027,7 @@ pub struct GotoRequest {
     pub arguments: GotoArguments,
     pub command: GotoRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: GotoRequestType,
 }
@@ -8206,7 +8206,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -8458,7 +8458,7 @@ pub struct GotoTargetsRequest {
     pub arguments: GotoTargetsArguments,
     pub command: GotoTargetsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: GotoTargetsRequestType,
 }
@@ -8657,7 +8657,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -8804,7 +8804,7 @@ pub struct InitializeRequest {
     pub arguments: InitializeRequestArguments,
     pub command: InitializeRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: InitializeRequestType,
 }
@@ -9193,7 +9193,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -9310,7 +9310,7 @@ pub struct InitializedEvent {
     pub body: ::std::option::Option<::serde_json::Value>,
     pub event: InitializedEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: InitializedEventType,
 }
@@ -9645,7 +9645,7 @@ pub struct InvalidatedEvent {
     pub body: InvalidatedEventBody,
     pub event: InvalidatedEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: InvalidatedEventType,
 }
@@ -9889,7 +9889,7 @@ pub struct LaunchRequest {
     pub arguments: LaunchRequestArguments,
     pub command: LaunchRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: LaunchRequestType,
 }
@@ -10125,7 +10125,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -10263,7 +10263,7 @@ pub struct LoadedSourceEvent {
     pub body: LoadedSourceEventBody,
     pub event: LoadedSourceEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: LoadedSourceEventType,
 }
@@ -10603,7 +10603,7 @@ pub struct LoadedSourcesRequest {
     pub arguments: ::std::option::Option<LoadedSourcesArguments>,
     pub command: LoadedSourcesRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: LoadedSourcesRequestType,
 }
@@ -10802,7 +10802,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -10976,7 +10976,7 @@ pub struct LocationsRequest {
     pub arguments: LocationsArguments,
     pub command: LocationsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: LocationsRequestType,
 }
@@ -11195,7 +11195,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -11407,7 +11407,7 @@ pub struct MemoryEvent {
     pub body: MemoryEventBody,
     pub event: MemoryEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: MemoryEventType,
 }
@@ -11868,7 +11868,7 @@ pub struct ModuleEvent {
     pub body: ModuleEventBody,
     pub event: ModuleEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ModuleEventType,
 }
@@ -12254,7 +12254,7 @@ pub struct ModulesRequest {
     pub arguments: ModulesArguments,
     pub command: ModulesRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ModulesRequestType,
 }
@@ -12459,7 +12459,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -12664,7 +12664,7 @@ pub struct NextRequest {
     pub arguments: NextArguments,
     pub command: NextRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: NextRequestType,
 }
@@ -12843,7 +12843,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -13042,7 +13042,7 @@ pub struct OutputEvent {
     pub body: OutputEventBody,
     pub event: OutputEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: OutputEventType,
 }
@@ -13476,7 +13476,7 @@ pub struct PauseRequest {
     pub arguments: PauseArguments,
     pub command: PauseRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: PauseRequestType,
 }
@@ -13655,7 +13655,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -13811,7 +13811,7 @@ pub struct ProcessEvent {
     pub body: ProcessEventBody,
     pub event: ProcessEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ProcessEventType,
 }
@@ -14178,7 +14178,7 @@ pub struct ProgressEndEvent {
     pub body: ProgressEndEventBody,
     pub event: ProgressEndEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ProgressEndEventType,
 }
@@ -14431,7 +14431,7 @@ pub struct ProgressStartEvent {
     pub body: ProgressStartEventBody,
     pub event: ProgressStartEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ProgressStartEventType,
 }
@@ -14709,7 +14709,7 @@ pub struct ProgressUpdateEvent {
     pub body: ProgressUpdateEventBody,
     pub event: ProgressUpdateEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ProgressUpdateEventType,
 }
@@ -14915,7 +14915,7 @@ impl ::std::convert::TryFrom<::std::string::String> for ProgressUpdateEventType 
 ///      "description": "Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.",
 ///      "type": "integer",
 ///      "format": "int32",
-///      "minimum": 1.0
+///      "minimum": 0.0
 ///    },
 ///    "type": {
 ///      "description": "Message type.",
@@ -14934,7 +14934,7 @@ impl ::std::convert::TryFrom<::std::string::String> for ProgressUpdateEventType 
 #[derive(::serde::Deserialize, ::serde::Serialize, Clone, Debug, PartialEq)]
 pub struct ProtocolMessage {
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     ///Message type.
     #[serde(rename = "type")]
     pub type_: ::std::string::String,
@@ -15024,7 +15024,7 @@ pub struct ReadMemoryRequest {
     pub arguments: ReadMemoryArguments,
     pub command: ReadMemoryRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ReadMemoryRequestType,
 }
@@ -15228,7 +15228,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -15409,7 +15409,7 @@ pub struct Request {
     ///The command to execute.
     pub command: ::std::string::String,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: RequestType,
 }
@@ -15570,7 +15570,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -15788,7 +15788,7 @@ pub struct RestartFrameRequest {
     pub arguments: RestartFrameArguments,
     pub command: RestartFrameRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: RestartFrameRequestType,
 }
@@ -15967,7 +15967,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -16085,7 +16085,7 @@ pub struct RestartRequest {
     pub arguments: ::std::option::Option<RestartArguments>,
     pub command: RestartRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: RestartRequestType,
 }
@@ -16264,7 +16264,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -16421,7 +16421,7 @@ pub struct ReverseContinueRequest {
     pub arguments: ReverseContinueArguments,
     pub command: ReverseContinueRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ReverseContinueRequestType,
 }
@@ -16600,7 +16600,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -16719,7 +16719,7 @@ pub struct RunInTerminalRequest {
     pub arguments: RunInTerminalRequestArguments,
     pub command: RunInTerminalRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: RunInTerminalRequestType,
 }
@@ -17079,7 +17079,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -17418,7 +17418,7 @@ pub struct ScopesRequest {
     pub arguments: ScopesArguments,
     pub command: ScopesRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ScopesRequestType,
 }
@@ -17617,7 +17617,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -17822,7 +17822,7 @@ pub struct SetBreakpointsRequest {
     pub arguments: SetBreakpointsArguments,
     pub command: SetBreakpointsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SetBreakpointsRequestType,
 }
@@ -18021,7 +18021,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -18197,7 +18197,7 @@ pub struct SetDataBreakpointsRequest {
     pub arguments: SetDataBreakpointsArguments,
     pub command: SetDataBreakpointsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SetDataBreakpointsRequestType,
 }
@@ -18398,7 +18398,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -18602,7 +18602,7 @@ pub struct SetExceptionBreakpointsRequest {
     pub arguments: SetExceptionBreakpointsArguments,
     pub command: SetExceptionBreakpointsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SetExceptionBreakpointsRequestType,
 }
@@ -18800,7 +18800,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -19006,7 +19006,7 @@ pub struct SetExpressionRequest {
     pub arguments: SetExpressionArguments,
     pub command: SetExpressionRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SetExpressionRequestType,
 }
@@ -19237,7 +19237,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -19502,7 +19502,7 @@ pub struct SetFunctionBreakpointsRequest {
     pub arguments: SetFunctionBreakpointsArguments,
     pub command: SetFunctionBreakpointsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SetFunctionBreakpointsRequestType,
 }
@@ -19705,7 +19705,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -19882,7 +19882,7 @@ pub struct SetInstructionBreakpointsRequest {
     pub arguments: SetInstructionBreakpointsArguments,
     pub command: SetInstructionBreakpointsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SetInstructionBreakpointsRequestType,
 }
@@ -20085,7 +20085,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -20283,7 +20283,7 @@ pub struct SetVariableRequest {
     pub arguments: SetVariableArguments,
     pub command: SetVariableRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SetVariableRequestType,
 }
@@ -20510,7 +20510,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -21063,7 +21063,7 @@ pub struct SourceRequest {
     pub arguments: SourceArguments,
     pub command: SourceRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: SourceRequestType,
 }
@@ -21263,7 +21263,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -21834,7 +21834,7 @@ pub struct StackTraceRequest {
     pub arguments: StackTraceArguments,
     pub command: StackTraceRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: StackTraceRequestType,
 }
@@ -22038,7 +22038,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -22198,7 +22198,7 @@ pub struct StartDebuggingRequest {
     pub arguments: StartDebuggingRequestArguments,
     pub command: StartDebuggingRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: StartDebuggingRequestType,
 }
@@ -22590,7 +22590,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -22754,7 +22754,7 @@ pub struct StepBackRequest {
     pub arguments: StepBackArguments,
     pub command: StepBackRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: StepBackRequestType,
 }
@@ -22933,7 +22933,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -23109,7 +23109,7 @@ pub struct StepInRequest {
     pub arguments: StepInArguments,
     pub command: StepInRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: StepInRequestType,
 }
@@ -23288,7 +23288,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -23512,7 +23512,7 @@ pub struct StepInTargetsRequest {
     pub arguments: StepInTargetsArguments,
     pub command: StepInTargetsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: StepInTargetsRequestType,
 }
@@ -23711,7 +23711,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -23903,7 +23903,7 @@ pub struct StepOutRequest {
     pub arguments: StepOutArguments,
     pub command: StepOutRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: StepOutRequestType,
 }
@@ -24082,7 +24082,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -24337,7 +24337,7 @@ pub struct StoppedEvent {
     pub body: StoppedEventBody,
     pub event: StoppedEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: StoppedEventType,
 }
@@ -24658,7 +24658,7 @@ pub struct TerminateRequest {
     pub arguments: ::std::option::Option<TerminateArguments>,
     pub command: TerminateRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: TerminateRequestType,
 }
@@ -24837,7 +24837,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -24994,7 +24994,7 @@ pub struct TerminateThreadsRequest {
     pub arguments: TerminateThreadsArguments,
     pub command: TerminateThreadsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: TerminateThreadsRequestType,
 }
@@ -25173,7 +25173,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -25306,7 +25306,7 @@ pub struct TerminatedEvent {
     pub body: ::std::option::Option<TerminatedEventBody>,
     pub event: TerminatedEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: TerminatedEventType,
 }
@@ -25584,7 +25584,7 @@ pub struct ThreadEvent {
     pub body: ThreadEventBody,
     pub event: ThreadEventEvent,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ThreadEventType,
 }
@@ -25805,7 +25805,7 @@ pub struct ThreadsRequest {
     pub arguments: ::std::option::Option<::serde_json::Value>,
     pub command: ThreadsRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: ThreadsRequestType,
 }
@@ -26004,7 +26004,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -26590,7 +26590,7 @@ pub struct VariablesRequest {
     pub arguments: VariablesArguments,
     pub command: VariablesRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: VariablesRequestType,
 }
@@ -26789,7 +26789,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/
@@ -26991,7 +26991,7 @@ pub struct WriteMemoryRequest {
     pub arguments: WriteMemoryArguments,
     pub command: WriteMemoryRequestCommand,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     #[serde(rename = "type")]
     pub type_: WriteMemoryRequestType,
 }
@@ -27190,7 +27190,7 @@ Some predefined values exist.*/
     ///Sequence number of the corresponding request.
     pub request_seq: ::std::num::NonZeroU32,
     ///Sequence number of the message (also known as message ID). The `seq` for the first message sent by a client or debug adapter is 1, and for each subsequent message is 1 greater than the previous message sent by that actor. `seq` can be used to order requests, responses, and events, and to associate requests with their corresponding responses. For protocol messages of type `request` the sequence number can be used to cancel the request.
-    pub seq: ::std::num::NonZeroU32,
+    pub seq: i32,
     /**Outcome of the request.
 If true, the request was successful and the `body` attribute may contain the result of the request.
 If the value is false, the attribute `message` contains the error in short form and the `body` may contain additional information (see `ErrorResponse.body.error`).*/

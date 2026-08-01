@@ -25,6 +25,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&schema_path)?)?;
     verify_dispatch_coverage(&crate_dir, &schema_json)?;
     make_protocol_objects_open(&mut schema_json);
+    allow_zero_sequence_numbers(&mut schema_json);
     let schema = serde_json::from_value::<schemars::schema::RootSchema>(schema_json)?;
     let mut settings = TypeSpaceSettings::default();
     settings
@@ -53,6 +54,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(output_path, generated)?;
     }
     Ok(())
+}
+
+fn allow_zero_sequence_numbers(schema: &mut serde_json::Value) {
+    // lldb-dap uses zero for response sequence numbers, despite DAP's stated
+    // minimum of one. Keep the wire model interoperable with real adapters.
+    schema["definitions"]["ProtocolMessage"]["properties"]["seq"]["minimum"] =
+        serde_json::Value::from(0);
 }
 
 fn make_protocol_objects_open(value: &mut serde_json::Value) {

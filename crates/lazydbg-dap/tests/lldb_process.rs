@@ -19,7 +19,7 @@ fn initializes_and_disconnects_from_lldb_dap() {
     let stdout = child.stdout.take().unwrap();
     let (client, _incoming) = Client::spawn(stdout, stdin);
 
-    let response = client
+    let _capabilities = client
         .send_timeout(
             &InitializeRequestArguments {
                 adapter_id: "lldb-dap".into(),
@@ -43,7 +43,6 @@ fn initializes_and_disconnects_from_lldb_dap() {
             Duration::from_secs(5),
         )
         .expect("initialize failed");
-    assert!(response.body.is_some());
 
     let disconnect = client.send_timeout(&DisconnectArguments::default(), Duration::from_secs(5));
     assert!(disconnect.is_ok() || matches!(disconnect, Err(Error::Disconnected)));

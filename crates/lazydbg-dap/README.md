@@ -2,6 +2,13 @@
 
 Typed Rust models and serde support for the Debug Adapter Protocol.
 
+`client::Client` owns DAP framing, serialization, response correlation, protocol
+validation, and typed response decoding. `Client::send` returns the response
+type associated with a `DapRequest`; `Client::begin` returns a typed pending
+request when callers need to process events before waiting for the response.
+Use the explicit `*_response` methods only when response sequence metadata or
+the extension-preserving raw message is needed.
+
 The protocol specification is provided by the Microsoft Debug Adapter Protocol
 repository in the `debug-adapter-protocol` git submodule. The checked-in Rust
 types in `src/generated.rs` are generated from

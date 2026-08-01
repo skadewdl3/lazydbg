@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, ops::Deref};
+use std::ops::Deref;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
 use serde_json::Value;
@@ -13,10 +13,10 @@ pub struct Extensible<T> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DapResponse<T> {
-    pub seq: u32,
+    pub seq: i32,
     pub request_seq: u32,
     pub command: String,
-    pub body: Option<Extensible<T>>,
+    pub body: Extensible<T>,
     raw: Value,
 }
 
@@ -26,10 +26,10 @@ impl<T> DapResponse<T> {
     }
 
     pub(crate) fn new(
-        seq: u32,
+        seq: i32,
         request_seq: u32,
         command: String,
-        body: Option<Extensible<T>>,
+        body: Extensible<T>,
         raw: Value,
     ) -> Self {
         Self {
@@ -39,6 +39,10 @@ impl<T> DapResponse<T> {
             body,
             raw,
         }
+    }
+
+    pub fn into_body(self) -> T {
+        self.body.into_typed()
     }
 }
 
@@ -138,7 +142,7 @@ pub enum ReverseRequest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnknownMessage {
-    pub seq: NonZeroU32,
+    pub seq: i32,
     pub name: String,
     pub body: Option<Value>,
     pub raw: Value,
@@ -195,9 +199,8 @@ pub(crate) fn decode_reverse_request(raw: Value) -> serde_json::Result<ReverseRe
 fn unknown_message(raw: Value, name_field: &str) -> serde_json::Result<UnknownMessage> {
     let seq = raw
         .get("seq")
-        .and_then(Value::as_u64)
-        .and_then(|seq| u32::try_from(seq).ok())
-        .and_then(NonZeroU32::new)
+        .and_then(Value::as_i64)
+        .and_then(|seq| i32::try_from(seq).ok())
         .ok_or_else(|| serde_json::Error::io(std::io::Error::other("missing or invalid seq")))?;
     let name = raw
         .get(name_field)

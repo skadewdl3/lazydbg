@@ -112,8 +112,8 @@ fn correlates_out_of_order_responses_and_delivers_events() {
             .unwrap()
     });
 
-    assert_eq!(first.join().unwrap().raw()["body"]["echo"], 1);
-    assert_eq!(second.join().unwrap().raw()["body"]["echo"], 2);
+    assert_eq!(first.join().unwrap()["echo"], 1);
+    assert_eq!(second.join().unwrap()["echo"], 2);
     assert!(matches!(
         incoming.recv().unwrap(),
         Incoming::Event(event) if matches!(*event, DapEvent::Initialized(_))
@@ -131,7 +131,7 @@ fn surfaces_protocol_errors() {
         write(
             &mut adapter_writer,
             &json!({
-                "seq": 2, "type": "response", "request_seq": request["seq"],
+                "seq": 0, "type": "response", "request_seq": request["seq"],
                 "success": false, "command": request["command"], "message": "notStopped",
                 "body": { "detail": "running" }
             }),
@@ -165,7 +165,9 @@ fn a_late_response_after_timeout_does_not_close_the_connection() {
             &mut adapter_writer,
             &json!({
                 "seq": 11, "type": "response", "request_seq": second["seq"],
-                "success": true, "command": second["command"]
+                "success": true, "command": second["command"],
+                "body": { "acknowledged": true },
+                "adapterExtension": "preserved"
             }),
         )
         .unwrap();
@@ -174,6 +176,45 @@ fn a_late_response_after_timeout_does_not_close_the_connection() {
     let timed_out =
         client.send_custom_timeout::<_, Value>("slow", &json!({}), Duration::from_millis(5));
     assert!(matches!(timed_out, Err(Error::Timeout(_))));
-    let response = client.send_custom::<_, Value>("next", &json!({})).unwrap();
+    let response = client
+        .send_custom_response::<_, Value>("next", &json!({}))
+        .unwrap();
+    assert_eq!(response.body["acknowledged"], true);
     assert_eq!(response.raw()["command"], "next");
+    assert_eq!(response.raw()["adapterExtension"], "preserved");
+}
+
+#[test]
+fn pending_request_allows_event_processing_before_response_completion() {
+    let (client, incoming, adapter, mut adapter_writer) = pair();
+    thread::spawn(move || {
+        let mut reader = FrameReader::new(adapter);
+        let request: Value =
+            serde_json::from_slice(&reader.read_frame().unwrap().unwrap()).unwrap();
+        write(
+            &mut adapter_writer,
+            &json!({
+                "seq": 2, "type": "event", "event": "initialized"
+            }),
+        )
+        .unwrap();
+        write(
+            &mut adapter_writer,
+            &json!({
+                "seq": 3, "type": "response", "request_seq": request["seq"],
+                "success": true, "command": request["command"],
+                "body": { "started": true }
+            }),
+        )
+        .unwrap();
+    });
+
+    let pending = client
+        .begin_custom::<_, Value>("launch", &json!({}))
+        .unwrap();
+    assert!(matches!(
+        incoming.recv().unwrap(),
+        Incoming::Event(event) if matches!(*event, DapEvent::Initialized(_))
+    ));
+    assert_eq!(pending.wait().unwrap()["started"], true);
 }

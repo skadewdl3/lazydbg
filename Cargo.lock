@@ -691,8 +691,6 @@ dependencies = [
  "reactatui",
  "reactatui-macros",
  "reactatui-widgets",
- "serde",
- "serde_json",
  "strum",
  "thiserror 2.0.19",
  "tracing",

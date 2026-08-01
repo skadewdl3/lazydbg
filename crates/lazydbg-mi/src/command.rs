@@ -1,5 +1,4 @@
-use crate::Record;
-use crate::error::{DeserializationError, SerializationError};
+use crate::error::SerializationError;
 use crate::ser::{ArgValue, CommandSerializer};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -11,12 +10,6 @@ pub trait MiCommand: Serialize {
     /// positional args (e.g. `-data-disassemble ... -- mode`).
     const DASH_DASH_BEFORE_POSITIONAL: bool = false;
     type Reply: DeserializeOwned + Serialize;
-
-    /// Parse the results of a record into this command's Reply type.
-    fn parse_reply(record: &Record) -> Option<Result<Self::Reply, DeserializationError>> {
-        // TODO: CommandError:Deserialize
-        record.parse_results::<Self::Reply>()
-    }
 }
 
 /// Field naming convention:

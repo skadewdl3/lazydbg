@@ -1,6 +1,37 @@
-use thiserror::Error;
+use std::{collections::HashMap, io, time::Duration};
 
 use serde::{de, ser};
+use thiserror::Error;
+
+use crate::{Record, Value};
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+    #[error("GDB/MI parse error: {0}")]
+    Parse(#[from] ParseError),
+    #[error("GDB/MI command serialization failed: {0}")]
+    Serialize(#[from] SerializationError),
+    #[error("GDB/MI reply deserialization failed: {0}")]
+    Deserialize(#[from] DeserializationError),
+    #[error("GDB/MI connection closed")]
+    Disconnected,
+    #[error("GDB/MI command timed out after {0:?}")]
+    Timeout(Duration),
+    #[error("GDB/MI token number exhausted")]
+    TokenExhausted,
+    #[error("GDB/MI command {command:?} failed: {message}")]
+    Command {
+        command: String,
+        message: String,
+        results: HashMap<String, Value>,
+    },
+    #[error("expected a GDB/MI result record, received {0:?}")]
+    UnexpectedRecord(Record),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
 pub enum SerializationError {
@@ -46,7 +77,7 @@ impl de::Error for DeserializationError {
 
 #[derive(Debug, Error)]
 pub enum ParseError {
-    #[error("input to parser in empty")]
+    #[error("input to parser is empty")]
     EmptyInput,
 
     #[error("parse error near {0}")]

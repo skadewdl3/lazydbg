@@ -2,14 +2,10 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BackendError {
-    #[error("MI deserialization failed")]
-    MiDeserialize(#[from] lazydbg_mi::error::DeserializationError),
-    #[error("MI serialization failed")]
-    MiSerialize(#[from] lazydbg_mi::error::SerializationError),
-    #[error("MI parsing failed")]
-    MiParse(#[from] lazydbg_mi::error::ParseError),
-    #[error("DAP JSON processing failed")]
-    DapJson(#[from] serde_json::Error),
+    #[error("GDB machine interface client error: {0}")]
+    Mi(#[from] lazydbg_mi::error::Error),
+    #[error("debug adapter protocol client error: {0}")]
+    Dap(#[from] lazydbg_dap::error::Error),
     #[error("debug adapter protocol error: {0}")]
     Protocol(String),
     #[error("I/O error")]
